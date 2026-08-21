@@ -1,0 +1,21 @@
+# --- Data: never committed --------------------------------------------------
+# All three sources are re-fetchable; see data/README.md for provenance.
+# Keeping raw data out of git also avoids any redistribution question under
+# ODbL (MIMIC demo) and CC BY 4.0 (Isfahan). Licence files ARE tracked.
+data/isfahan/*.csv
+data/isfahan/*.docx
+data/mimic_ed_demo/*.csv
+data/yale/*.RData
+data/yale/*.csv
+data/yale/ALL_COLUMNS.txt
+
+# Credentialed data, should it ever arrive. The PhysioNet DUA forbids
+# redistribution — this line exists before the directory does, on purpose.
+data/mimic_full/
+
+# --- Python -----------------------------------------------------------------
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.env

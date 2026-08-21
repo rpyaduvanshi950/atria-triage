@@ -1,0 +1,96 @@
+# ATRIA Layer 0 — deterministic red-flag gate.
+#
+# Ten hard rules. No model output can suppress a fired flag; only a licensed
+# clinician can (Layer 3). This file is versioned and every entry carries its own
+# clinical citation, so any rule can be defended individually.
+#
+# Missing-value policy, and why it is split:
+#   worst_case  — numeric physiological fields. An unrecorded SpO2 is gated as if
+#                 it were dangerous. "Unknown is not normal."
+#   absent      — witnessed events (seizure, haemorrhage). Absence of an
+#                 observation is not evidence of the event, and imputing these to
+#                 "true" would fire every rule on every patient with a blank form.
+version: "0.1.0"
+
+worst_case:
+  gcs: 3
+  o2sat: 85
+  sbp: 80
+  resprate: 34
+  heartrate: 130
+  temperature: 35.0
+
+rules:
+  - id: RF01
+    name: Severe depression of consciousness
+    all_of: [{field: gcs, op: le, value: 8}]
+    missing_policy: worst_case
+    rationale: GCS <=8 indicates inability to protect the airway.
+    citation: "Advanced Trauma Life Support, 10th ed. — GCS <=8 is the conventional intubation threshold."
+
+  - id: RF02
+    name: Critical hypoxaemia
+    all_of: [{field: o2sat, op: lt, value: 90}]
+    missing_policy: worst_case
+    rationale: SpO2 <90% marks the steep part of the oxyhaemoglobin dissociation curve.
+    citation: "NEWS2, Royal College of Physicians 2017 — SpO2 <=91% scores 3, the maximum single-parameter score."
+
+  - id: RF03
+    name: Hypotension / shock
+    all_of: [{field: sbp, op: lt, value: 90}]
+    missing_policy: worst_case
+    rationale: Systolic <90 mmHg is the conventional shock threshold.
+    citation: "NEWS2, RCP 2017 — systolic <=90 mmHg scores 3. Consistent with qSOFA (Singer et al., JAMA 2016)."
+
+  - id: RF04
+    name: Active seizure
+    all_of: [{field: active_seizure, op: is_true}]
+    missing_policy: absent
+    rationale: Ongoing seizure activity is a time-critical neurological emergency.
+    citation: "Glauser et al., Epilepsy Currents 2016 — treat as status epilepticus at 5 minutes of continuous activity."
+
+  - id: RF05
+    name: Airway compromise
+    all_of: [{field: airway_compromise, op: is_true}]
+    missing_policy: absent
+    rationale: Stridor, obstruction or inability to maintain the airway. Airway precedes all else.
+    citation: "ATLS 10th ed. — airway is the first primary-survey priority."
+
+  - id: RF06
+    name: Uncontrolled haemorrhage
+    all_of: [{field: uncontrolled_haemorrhage, op: is_true}]
+    missing_policy: absent
+    rationale: Exsanguinating bleeding not controlled by direct pressure.
+    citation: "ATLS 10th ed., circulation with haemorrhage control."
+
+  - id: RF07
+    name: Anaphylaxis
+    all_of: [{field: anaphylaxis, op: is_true}]
+    missing_policy: absent
+    rationale: Rapidly progressive multi-system hypersensitivity; adrenaline is time-critical.
+    citation: "Muraro et al., EAACI Guidelines, Allergy 2014."
+
+  - id: RF08
+    name: Stroke signs within treatment window
+    all_of:
+      - {field: stroke_signs, op: is_true}
+      - {field: symptom_onset_minutes, op: le, value: 270}
+    missing_policy: absent
+    rationale: FAST-positive within 4.5 hours preserves thrombolysis eligibility.
+    citation: "Powers et al., AHA/ASA Guidelines, Stroke 2019 — alteplase window 4.5h from onset."
+
+  - id: RF09
+    name: Eclampsia / pre-eclampsia with seizure
+    all_of: [{field: eclampsia, op: is_true}]
+    missing_policy: absent
+    rationale: Obstetric emergency threatening both patient and foetus.
+    citation: "WHO Recommendations for Prevention and Treatment of Pre-eclampsia and Eclampsia, 2011."
+
+  - id: RF10
+    name: Paediatric respiratory distress with retractions
+    all_of:
+      - {field: age, op: lt, value: 15}
+      - {field: retractions, op: is_true}
+    missing_policy: absent
+    rationale: Intercostal or subcostal recession signals impending respiratory failure in children.
+    citation: "WHO Pocket Book of Hospital Care for Children, 2nd ed. 2013 — chest indrawing as an emergency sign."
