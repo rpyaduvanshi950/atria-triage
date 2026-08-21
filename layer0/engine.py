@@ -42,23 +42,51 @@ class FiredRule:
 
 @dataclass(frozen=True)
 class GateResult:
+    #: rules that fired on *observed* values — a confirmed emergency
     fired: tuple[FiredRule, ...] = ()
+    #: rules that fired only because a missing vital was assumed worst-case.
+    #: Not an emergency, but not safe to ignore: the vital must be measured.
+    unresolved: tuple[FiredRule, ...] = ()
     imputed_fields: tuple[str, ...] = ()
+    #: rules skipped because the data source does not carry the field at all.
+    #: An uncollected field is not a missing measurement: treating it as one
+    #: fires the rule on every patient and makes the gate meaningless.
+    not_evaluable: tuple[str, ...] = ()
     rules_version: str = ""
 
     @property
     def is_red(self) -> bool:
+        """A confirmed red flag, on values someone actually recorded."""
         return bool(self.fired)
 
     @property
+    def needs_measurement(self) -> bool:
+        """An emergency that cannot be ruled out because the vital is missing."""
+        return bool(self.unresolved) and not self.fired
+
+    @property
     def priority(self) -> int:
-        """Any fired flag forces the most urgent band."""
-        return 1 if self.fired else 5
+        """
+        Unknown is not normal — but it is also not the same as critical.
+
+        A confirmed flag takes the most urgent band. An unresolvable one takes
+        band 2 and an instruction to measure: treating every blank field as a
+        crashing patient floods the queue and trains staff to ignore the board,
+        which is the failure this system exists to prevent.
+        """
+        if self.fired:
+            return 1
+        if self.unresolved:
+            return 2
+        return 5
 
     def explain(self) -> str:
-        if not self.fired:
-            return "no red flags"
-        return "; ".join(r.reason() for r in self.fired)
+        if self.fired:
+            return "; ".join(r.reason() for r in self.fired)
+        if self.unresolved:
+            fields = ", ".join(self.imputed_fields)
+            return f"cannot rule out {self.unresolved[0].name.lower()} — measure {fields}"
+        return "no red flags"
 
 
 class RuleTable:
@@ -80,11 +108,23 @@ class RuleTable:
             return self.worst_case[fieldname], True
         return None, False
 
-    def evaluate(self, patient: dict) -> GateResult:
+    def evaluate(self, patient: dict, available: set[str] | None = None) -> GateResult:
+        """
+        `available` names the fields the data source can supply at all. Rules
+        depending on anything outside it are reported as not evaluable rather
+        than gated on an assumed-worst value.
+        """
         fired: list[FiredRule] = []
+        unresolved: list[FiredRule] = []
         all_imputed: set[str] = set()
+        skipped: list[str] = []
 
         for rule in self.rules:
+            if available is not None:
+                needs = {c["field"] for c in rule["all_of"]}
+                if not needs <= available:
+                    skipped.append(rule["id"])
+                    continue
             policy = rule.get("missing_policy", "absent")
             imputed: list[str] = []
             ok = True
@@ -101,18 +141,23 @@ class RuleTable:
                     break
 
             if ok:
-                fired.append(FiredRule(rule["id"], rule["name"], rule["citation"], tuple(imputed)))
-                all_imputed.update(imputed)
+                hit = FiredRule(rule["id"], rule["name"], rule["citation"], tuple(imputed))
+                if imputed:
+                    unresolved.append(hit)
+                    all_imputed.update(imputed)
+                else:
+                    fired.append(hit)
 
-        return GateResult(tuple(fired), tuple(sorted(all_imputed)), self.version)
+        return GateResult(tuple(fired), tuple(unresolved), tuple(sorted(all_imputed)),
+                          tuple(skipped), self.version)
 
 
 _default: RuleTable | None = None
 
 
-def gate(patient: dict) -> GateResult:
+def gate(patient: dict, available: set[str] | None = None) -> GateResult:
     """Evaluate the shared rule table. Safe to call from anywhere, including offline."""
     global _default
     if _default is None:
         _default = RuleTable()
-    return _default.evaluate(patient)
+    return _default.evaluate(patient, available)

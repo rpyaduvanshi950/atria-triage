@@ -5,8 +5,15 @@ import contracts.schema as schema
 import data.loaders as loaders
 
 
-def test_registry_lists_three_sources():
-    assert set(loaders.LOADERS) == {"yale", "mimic_demo", "isfahan"}
+def test_registry_lists_all_sources():
+    assert set(loaders.LOADERS) == {"yale", "mimic_demo", "isfahan", "synthetic"}
+
+
+def test_synthetic_is_calibrated_to_real_priors():
+    ds = loaders.load("synthetic")
+    assert "isfahan" in ds.extensions["priors"], "generator fell back to constants"
+    assert ds.has_trajectories
+    assert (ds.edstays["age"] < 15).sum() > 0, "no paediatric cases generated"
 
 
 def test_mimic_demo_conforms():

@@ -67,16 +67,36 @@ def test_rf10_paediatric_retractions_is_age_gated():
 # --- the design commitments ------------------------------------------------
 
 def test_unknown_is_not_normal_for_numeric_vitals():
-    """A missing SpO2 gates as if it were dangerous, not as if it were fine."""
+    """A missing SpO2 is never read as a reassuring one."""
     blank = {k: v for k, v in WELL.items() if k != "o2sat"}
     result = gate(blank)
-    assert "RF02" in {r.id for r in result.fired}
+    assert "RF02" in {r.id for r in result.unresolved}
     assert "o2sat" in result.imputed_fields
+    assert result.priority < 5, "a missing vital must still raise urgency"
+
+
+def test_unknown_is_not_treated_as_critical_either():
+    """
+    Blanket worst-case escalation floods the queue and trains staff to ignore
+    the board — the exact failure this system exists to prevent.
+    """
+    blank = {k: v for k, v in WELL.items() if k != "o2sat"}
+    result = gate(blank)
+    assert not result.is_red, "an unmeasured vital is not a confirmed emergency"
+    assert result.needs_measurement
+    assert result.priority == 2
+    assert "measure" in result.explain()
+
+
+def test_confirmed_flag_outranks_an_unresolved_one():
+    confirmed = gate({**WELL, "o2sat": 85})
+    unresolved = gate({k: v for k, v in WELL.items() if k != "o2sat"})
+    assert confirmed.priority < unresolved.priority
 
 
 def test_imputation_is_disclosed_not_silent():
     blank = {k: v for k, v in WELL.items() if k != "sbp"}
-    rule = next(r for r in gate(blank).fired if r.id == "RF03")
+    rule = next(r for r in gate(blank).unresolved if r.id == "RF03")
     assert "sbp" in rule.imputed
     assert "assumed-worst" in rule.reason()
 
@@ -100,3 +120,22 @@ def test_layer0_needs_no_model_and_no_network(monkeypatch):
 
     monkeypatch.setattr(socket, "socket", deny)
     assert gate({**WELL, "o2sat": 80}).is_red
+
+
+def test_uncollected_fields_are_not_treated_as_missing_measurements():
+    """
+    No source in this project carries GCS. Gating every patient on an assumed
+    GCS of 3 would fire RF01 on all of them and make the gate meaningless.
+    """
+    available = {"heartrate", "resprate", "o2sat", "sbp", "dbp", "temperature", "age"}
+    result = gate({"o2sat": 98, "sbp": 120, "age": 40}, available)
+    assert "RF01" in result.not_evaluable
+    assert "RF01" not in {r.id for r in result.fired + result.unresolved}
+
+
+def test_a_measured_field_still_gates_when_absent_for_this_patient():
+    """Uncollected is skipped; unrecorded-for-this-patient is not."""
+    available = {"heartrate", "resprate", "o2sat", "sbp", "dbp", "temperature", "age"}
+    result = gate({"sbp": 120, "age": 40}, available)   # o2sat absent
+    assert "RF02" in {r.id for r in result.unresolved}
+    assert result.needs_measurement

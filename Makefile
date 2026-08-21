@@ -1,10 +1,11 @@
-.PHONY: help setup test status extract-yale clean
+.PHONY: help setup test status demo extract-yale clean
 
 help:
 	@echo "ATRIA — Accenture Innovation Challenge 2026, Track 2"
 	@echo ""
 	@echo "  make setup         create .venv and install dependencies"
 	@echo "  make test          run the full test suite"
+	@echo "  make demo          start the live board on :8000"
 	@echo "  make status        show which data sources are ready"
 	@echo "  make extract-yale  extract the Yale slim CSV (needs R)"
 
@@ -15,6 +16,9 @@ setup:
 
 test:
 	.venv/bin/python -m pytest tests/ -q
+
+demo:
+	.venv/bin/uvicorn service.app:app --host 127.0.0.1 --port 8000
 
 status:
 	@.venv/bin/python -c "import data.loaders as L; \

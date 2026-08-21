@@ -14,7 +14,8 @@ escalate on its own; it may never de-escalate on its own.
 
 ```bash
 make setup      # venv + dependencies
-make test       # 40 tests
+make test       # 56 tests
+make demo       # live board at http://127.0.0.1:8000
 make status     # which data sources are ready
 ```
 
@@ -23,7 +24,7 @@ make status     # which data sources are ready
 | | | |
 |---|---|---|
 | **Layer 0** | `layer0/` | Deterministic red-flag gate — 10 cited rules, runs offline. Decides |
-| **Layer 1** | `layer1/` | Acuity scorer with conformal confidence. Recommends |
+| **Layer 1** | `layer1/` | Acuity scorer, banded by risk quantile. Recommends |
 | **Layer 2** | `layer2/` | Dynamic re-ranker from vital trajectories. Re-orders |
 | **Layer 3** | `layer3/` | Human authority + hash-chained audit log. Decides |
 
@@ -41,6 +42,7 @@ three, not a courtesy.
 | Yale ED (560,486 visits) | Trains Layer 1 | needs one R extraction step |
 | MIMIC-IV-ED Demo (222 stays) | Layer 2 trajectories, schema truth | yes |
 | Isfahan ED (143,140 stays) | Generator priors + leakage case study | yes, **not trainable** |
+| Synthetic | Trajectories, paediatrics, surge | generated, fitted to Isfahan priors |
 
 Isfahan is deliberately marked non-trainable: its missingness encodes the triage
 decision itself. `Dataset.require_trainable()` raises `LeakageError` if anyone
@@ -52,13 +54,27 @@ tries. See `data/README.md`.
 contracts/    the schema contract — shared truth, change by consensus only
 data/         loaders + the three datasets + provenance
 layer0..3/    the four layers
-service/      FastAPI, websocket, replay clock          (day 1)
+service/      replay clock, queue engine, FastAPI + websocket
 dashboard/    the nurse board — design decisions in NOTES.md
 eval/         vs_baseline, fairness, cross_site, lead_time, latency
 scenarios/    the six seeded demo scenarios             (day 3)
 tests/        40 tests, one per red-flag rule
 docs/         proposal outline, deck changes
 ```
+
+## Layer 0's three outcomes
+
+The gate does not answer yes/no. It answers one of three things, and the
+distinction is what keeps it usable:
+
+- **confirmed** — a rule fired on values someone actually recorded. Band 1.
+- **cannot rule out** — a rule fires only when a missing vital is assumed
+  worst-case. Band 2, plus an instruction to measure it. Unknown is not normal,
+  but it is not the same as critical either: escalating every blank field to
+  band 1 floods the board and trains staff to ignore it.
+- **not evaluable** — the source has no such column at all. No source here
+  carries GCS, and gating every patient on an assumed GCS of 3 would fire that
+  rule on all of them.
 
 ## Plan
 

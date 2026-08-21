@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ATRIA · Bay A</title>
+<style>
+  :root{
+    --ground:#0D1513; --surface:#15201E; --surface-2:#1D2B28;
+    --ink:#E7EDEA; --ink-2:#98A9A5; --ink-3:#72837F; --rule:#26352F;
+    --accent:#45C4B2; --signal:#E8903F; --critical:#E5766A;
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+    --sans:"IBM Plex Sans Condensed","Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+       font-size:15px;-webkit-font-smoothing:antialiased}
+  header{display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;
+         padding:16px 24px;border-bottom:2px solid var(--rule);background:var(--surface)}
+  header h1{margin:0;font-size:19px;letter-spacing:.02em}
+  header .sub{color:var(--ink-3);font-family:var(--mono);font-size:12px}
+  header .stats{margin-left:auto;display:flex;gap:20px;font-family:var(--mono);font-size:12px}
+  header .stats b{color:var(--accent);font-weight:500}
+  .live{display:inline-flex;align-items:center;gap:6px;color:var(--accent)}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+  @media (prefers-reduced-motion:no-preference){.dot{animation:pulse 2s infinite}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+  .banner{padding:10px 24px;background:var(--critical);color:#1a0f0d;
+          font-family:var(--mono);font-size:12.5px;display:none}
+  .banner.on{display:block}
+  main{padding:14px 24px 60px;display:flex;flex-direction:column;gap:8px}
+  .row{display:grid;grid-template-columns:56px 1fr auto;gap:16px;align-items:start;
+       background:var(--surface);border:1px solid var(--rule);border-left:3px solid transparent;
+       padding:12px 16px}
+  .row.ESCALATED{border-left-color:var(--signal)}
+  .row.AWAITING{border-left-color:var(--accent)}
+  .row.red{border-left-color:var(--critical)}
+  .band{font-family:var(--mono);font-size:26px;line-height:1;font-variant-numeric:tabular-nums}
+  .band small{display:block;font-size:10px;color:var(--signal);margin-top:4px;letter-spacing:.04em}
+  .who{font-weight:600}
+  .who span{color:var(--ink-3);font-weight:400;font-family:var(--mono);font-size:12px;margin-left:8px}
+  .why{color:var(--ink-2);font-size:13.5px;margin-top:3px}
+  .tags{margin-top:7px;display:flex;gap:6px;flex-wrap:wrap}
+  .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;padding:2px 7px;
+       border:1px solid var(--rule);color:var(--ink-3)}
+  .tag.red{border-color:var(--critical);color:var(--critical)}
+  .tag.measure{border-color:var(--signal);color:var(--signal)}
+  .tag.conf-HIGH{border-color:var(--accent);color:var(--accent)}
+  .tag.conf-LOW{border-color:var(--critical);color:var(--critical)}
+  .meta{text-align:right;font-family:var(--mono);font-size:12px;color:var(--ink-3);white-space:nowrap}
+  .meta .over{color:var(--signal)}
+  .empty{color:var(--ink-3);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <h1>ATRIA · Bay A</h1>
+  <span class="sub">a live queue, not a label</span>
+  <div class="stats">
+    <span><b id="waiting">0</b> waiting</span>
+    <span><b id="escalated">0</b> escalated</span>
+    <span>p95 <b id="p95">–</b> ms</span>
+    <span class="live"><span class="dot"></span><span id="clock">–</span></span>
+  </div>
+</header>
+<div class="banner" id="banner">DEGRADED MODE · model service unavailable · Layer 0 red-flag gate still active</div>
+<main id="board"><div class="empty">waiting for the first arrival…</div></main>
+
+<script>
+const board = document.getElementById('board');
+
+function render(s){
+  document.getElementById('waiting').textContent = s.waiting;
+  document.getElementById('escalated').textContent = s.escalated;
+  document.getElementById('p95').textContent = s.p95_ms ?? '–';
+  document.getElementById('clock').textContent = (s.now || '').slice(11,16);
+  document.getElementById('banner').classList.toggle('on', !!s.degraded);
+
+  if(!s.rows.length){ board.innerHTML = '<div class="empty">waiting for the first arrival…</div>'; return; }
+
+  board.innerHTML = s.rows.map(r => {
+    const cls = ['row', r.state, r.red_flag ? 'red' : ''].join(' ');
+    const from = r.band_before ? `<small>&uarr; from ${r.band_before}</small>` : '';
+    const why  = r.red_flag || (r.reasons||[]).join(' · ') || r.needs_measurement || '—';
+    const tags = [
+      r.red_flag ? '<span class="tag red">RED FLAG</span>' : '',
+      r.needs_measurement && !r.red_flag ? '<span class="tag measure">MEASURE</span>' : '',
+      `<span class="tag conf-${r.confidence}">${r.confidence}</span>`,
+      (r.missing||[]).length ? `<span class="tag">missing: ${r.missing.join(', ')}</span>` : '',
+      `<span class="tag">${r.readings} readings</span>`
+    ].join('');
+    const over = r.overdue_by > 0 ? `<div class="over">${r.overdue_by}m past safe wait</div>` : '';
+    const age = r.age != null ? `${Math.round(r.age)}${r.gender||''}` : '—';
+    return `<div class="${cls}">
+      <div class="band">${r.band}${from}</div>
+      <div>
+        <div class="who">${r.complaint}<span>${age} · #${r.stay_id}</span></div>
+        <div class="why">${why}</div>
+        <div class="tags">${tags}</div>
+      </div>
+      <div class="meta">waited ${r.waited}m${over}</div>
+    </div>`;
+  }).join('');
+}
+
+function connect(){
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onmessage = e => render(JSON.parse(e.data));
+  ws.onclose = () => setTimeout(connect, 1200);
+}
+connect();
+</script>
+</body>
+</html>

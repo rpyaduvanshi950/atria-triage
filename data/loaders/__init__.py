@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from contracts.schema import Dataset
 
-from . import isfahan, mimic_demo, yale
+from . import isfahan, mimic_demo, synthetic, yale
 
 LOADERS = {
     "yale": yale.load,
     "mimic_demo": mimic_demo.load,
     "isfahan": isfahan.load,
+    "synthetic": synthetic.generate,
 }
 
 
