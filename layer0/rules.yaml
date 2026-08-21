@@ -37,10 +37,14 @@ rules:
 
   - id: RF03
     name: Hypotension / shock
-    all_of: [{field: sbp, op: lt, value: 90}]
+    # Age-banded, not a single adult number: 90 mmHg for adults, 70 + 2*age for
+    # children 1-10, 70 under one year, 60 under one month.
+    all_of: [{field: sbp, op: lt, value_fn: sbp_hypotension}]
     missing_policy: worst_case
-    rationale: Systolic <90 mmHg is the conventional shock threshold.
-    citation: "NEWS2, RCP 2017 — systolic <=90 mmHg scores 3. Consistent with qSOFA (Singer et al., JAMA 2016)."
+    rationale: >
+      Systolic hypotension by age. Applying the adult 90 mmHg threshold to
+      children produces both false alarms and, at the other end, missed shock.
+    citation: "NEWS2, RCP 2017 (adult); PALS age-specific hypotension thresholds, AHA 2020 (paediatric)."
 
   - id: RF04
     name: Active seizure

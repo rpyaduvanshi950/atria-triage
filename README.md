@@ -14,9 +14,11 @@ escalate on its own; it may never de-escalate on its own.
 
 ```bash
 make setup      # venv + dependencies
-make test       # 56 tests
+make test       # 85 tests
 make demo       # live board at http://127.0.0.1:8000
 make status     # which data sources are ready
+make scenarios  # the six demo scenarios, scripted
+make eval       # latency, cross-site, Layer 2 lead time
 ```
 
 ## Layers
@@ -24,9 +26,18 @@ make status     # which data sources are ready
 | | | |
 |---|---|---|
 | **Layer 0** | `layer0/` | Deterministic red-flag gate — 10 cited rules, runs offline. Decides |
-| **Layer 1** | `layer1/` | Acuity scorer, banded by risk quantile. Recommends |
+| **Layer 1** | `layer1/` | Acuity scorer + Mondrian conformal confidence. Recommends |
 | **Layer 2** | `layer2/` | Dynamic re-ranker from vital trajectories. Re-orders |
 | **Layer 3** | `layer3/` | Human authority + hash-chained audit log. Decides |
+
+## What has been measured
+
+| | |
+|---|---|
+| Layer 2 on 159 real MIMIC trajectories | 32.2% of admitted flagged vs 12.2% of discharged, median 164 min lead |
+| Conformal coverage | >=95% per class, calibrated on held-out data |
+| Latency, p95 | 41 ms at 3x surge, against a 400 ms budget |
+| Missingness audit | HR, RR and SBP absences were read as *reassuring*; now clamped |
 
 The escalation invariant lives in `layer2/ratchet.py` and is five lines long.
 `tests/test_ratchet.py` proves no machine source can suppress a red flag.
@@ -75,6 +86,22 @@ distinction is what keeps it usable:
 - **not evaluable** — the source has no such column at all. No source here
   carries GCS, and gating every patient on an assumed GCS of 3 would fire that
   rule on all of them.
+
+## Three findings worth a slide each
+
+**Isfahan encodes its own triage decision.** 100% of grade-1 patients have zero
+recorded vitals against 0.1% of grade-3. A model using missing-indicators would
+have scored near-perfectly on hospital workflow rather than physiology. Excluded
+from training, kept as the case study.
+
+**The model learned that missing vitals are reassuring.** Blanking heart rate,
+respiratory rate or systolic *lowered* predicted risk — a silent undertriage
+path, found by auditing rather than assuming. `layer1/verify.py` reports it and
+the scorer clamps it.
+
+**Our own Layer 0 was adult-calibrated.** It fired hypotension on a 3-year-old
+with SBP 88, which is normal for that age — exactly the failure the brief names.
+Thresholds are now age-banded on PALS.
 
 ## Plan
 

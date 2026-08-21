@@ -7,6 +7,8 @@ help:
 	@echo "  make test          run the full test suite"
 	@echo "  make demo          start the live board on :8000"
 	@echo "  make status        show which data sources are ready"
+	@echo "  make scenarios     run the six demo scenarios"
+	@echo "  make eval          latency, cross-site and Layer 2 lead time"
 	@echo "  make extract-yale  extract the Yale slim CSV (needs R)"
 
 setup:
@@ -19,6 +21,16 @@ test:
 
 demo:
 	.venv/bin/uvicorn service.app:app --host 127.0.0.1 --port 8000
+
+scenarios:
+	.venv/bin/python -m scenarios.run
+
+eval:
+	@.venv/bin/python -m eval.latency
+	@echo ""
+	@.venv/bin/python -m eval.lead_time
+	@echo ""
+	@.venv/bin/python -m eval.cross_site
 
 status:
 	@.venv/bin/python -c "import data.loaders as L; \

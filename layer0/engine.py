@@ -15,6 +15,41 @@ import yaml
 
 RULES_PATH = Path(__file__).with_name("rules.yaml")
 
+def sbp_hypotension_threshold(patient: dict) -> float:
+    """
+    Age-banded systolic hypotension, PALS. A systolic of 88 is shock in an adult
+    and entirely normal in a three-year-old; a single adult-calibrated number is
+    the silent safety risk the brief calls out by name.
+    """
+    age = patient.get("age")
+    if age is None:
+        return 90.0                       # unknown age: assume the adult threshold
+    if age < 1 / 12:
+        return 60.0
+    if age < 1:
+        return 70.0
+    if age < 10:
+        return 70.0 + 2.0 * age
+    return 90.0
+
+
+def tachycardia_threshold(patient: dict) -> float:
+    """Age-banded tachycardia, PALS reference ranges."""
+    age = patient.get("age")
+    if age is None or age >= 12:
+        return 130.0
+    if age < 1:
+        return 180.0
+    if age < 5:
+        return 160.0
+    return 140.0
+
+
+THRESHOLD_FNS = {
+    "sbp_hypotension": sbp_hypotension_threshold,
+    "tachycardia": tachycardia_threshold,
+}
+
 OPS = {
     "lt": lambda a, b: a < b,
     "le": lambda a, b: a <= b,
@@ -136,7 +171,10 @@ class RuleTable:
                     break
                 if was_imputed:
                     imputed.append(cond["field"])
-                if not OPS[cond["op"]](value, cond.get("value")):
+                limit = cond.get("value")
+                if "value_fn" in cond:
+                    limit = THRESHOLD_FNS[cond["value_fn"]](patient)
+                if not OPS[cond["op"]](value, limit):
                     ok = False
                     break
 

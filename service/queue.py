@@ -21,6 +21,7 @@ from layer0.engine import gate
 AVAILABLE_FIELDS = {*VITAL_FIELDS, "age"}
 from layer1.model import AcuityScorer
 from layer2.ratchet import Source, apply
+from layer3.audit import AuditLog
 from layer2.trajectory import REASSESS_MINUTES, assess
 
 
@@ -61,8 +62,9 @@ class Patient:
 
 
 class QueueEngine:
-    def __init__(self, scorer: AcuityScorer | None = None):
+    def __init__(self, scorer: AcuityScorer | None = None, audit: AuditLog | None = None):
         self.scorer = scorer
+        self.audit = audit or AuditLog()
         self.patients: dict[int, Patient] = {}
         self.now: pd.Timestamp | None = None
         self.latencies: list[float] = []
@@ -120,6 +122,12 @@ class QueueEngine:
         if patient.red_flag or band == 1:
             patient.state = "AWAITING"
         self.patients[e.stay_id] = patient
+        self.audit.append(
+            "arrival", patient.stay_id, self.now, band=patient.band,
+            confidence=patient.confidence, risk=round(patient.risk, 4),
+            red_flag=patient.red_flag, needs_measurement=patient.needs_measurement,
+            missing=list(patient.missing), degraded=self.degraded,
+        )
         self.latencies.append((time.perf_counter() - t0) * 1000)
 
     def on_vitals(self, e) -> dict | None:
@@ -158,6 +166,11 @@ class QueueEngine:
                 change = dict(stay_id=patient.stay_id, at=str(self.now),
                               frm=patient.band_before, to=new, reasons=list(t.reasons))
                 self.events_log.append(change)
+                self.audit.append(
+                    "escalation", patient.stay_id, self.now,
+                    frm=patient.band_before, to=new, reasons=list(t.reasons),
+                    shock_index=t.shock_index, readings=t.readings, source="layer2_trend",
+                )
         self.latencies.append((time.perf_counter() - t0) * 1000)
         return change
 
@@ -175,6 +188,8 @@ class QueueEngine:
             escalated=sum(1 for r in rows if r["state"] == "ESCALATED"),
             p95_ms=round(lat[int(len(lat) * 0.95)], 1) if lat else None,
             escalations=self.events_log[-10:],
+            audit_entries=len(self.audit),
+            audit_intact=self.audit.verify()[0],
         )
 
     def override(self, stay_id: int, band: int, reason_code: str, clinician: str) -> dict:
@@ -186,6 +201,11 @@ class QueueEngine:
         entry = dict(stay_id=stay_id, at=str(self.now), frm=before, to=p.band,
                      reason_code=reason_code, clinician=clinician, kind="override")
         self.events_log.append(entry)
+        self.audit.append(
+            "override", stay_id, self.now, frm=before, to=p.band,
+            reason_code=reason_code, clinician=clinician,
+            downgrade=p.band > before, risk=round(p.risk, 4), confidence=p.confidence,
+        )
         return entry
 
 

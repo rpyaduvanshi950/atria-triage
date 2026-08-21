@@ -14,6 +14,7 @@ LOADERS = {
 
 
 def load(name: str, **kw) -> Dataset:
+    """Load a source by name. Extra kwargs go to the loader (e.g. synthetic n=, seed=)."""
     if name not in LOADERS:
         raise KeyError(f"unknown source {name!r}; have {sorted(LOADERS)}")
     return LOADERS[name](**kw)

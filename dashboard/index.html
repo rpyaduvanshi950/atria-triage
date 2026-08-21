@@ -50,6 +50,23 @@
   .meta{text-align:right;font-family:var(--mono);font-size:12px;color:var(--ink-3);white-space:nowrap}
   .meta .over{color:var(--signal)}
   .empty{color:var(--ink-3);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center}
+  .acts{display:flex;gap:6px;margin-top:9px}
+  button{font-family:var(--mono);font-size:11px;letter-spacing:.05em;padding:5px 11px;
+         background:transparent;color:var(--ink-2);border:1px solid var(--rule);cursor:pointer}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  button.down:hover{border-color:var(--critical);color:var(--critical)}
+  dialog{background:var(--surface);color:var(--ink);border:1px solid var(--rule);
+         padding:0;max-width:420px;width:92%}
+  dialog::backdrop{background:rgba(0,0,0,.6)}
+  .dlg{padding:20px 22px}
+  .dlg h2{margin:0 0 4px;font-size:17px}
+  .dlg p{margin:0 0 14px;color:var(--ink-2);font-size:13.5px}
+  .dlg label{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-3);
+             letter-spacing:.06em;margin:12px 0 5px}
+  .dlg select{width:100%;background:var(--surface-2);color:var(--ink);
+              border:1px solid var(--rule);padding:8px;font-family:var(--mono);font-size:12px}
+  .dlg .warn{margin-top:14px;padding:9px 11px;border-left:2px solid var(--critical);
+             background:rgba(229,118,106,.08);font-size:12.5px;color:var(--ink-2)}
 </style>
 </head>
 <body>
@@ -66,8 +83,60 @@
 <div class="banner" id="banner">DEGRADED MODE · model service unavailable · Layer 0 red-flag gate still active</div>
 <main id="board"><div class="empty">waiting for the first arrival…</div></main>
 
+<dialog id="ovr"><form class="dlg" method="dialog">
+  <h2>Override priority</h2>
+  <p>You are changing a recommendation. Every override is recorded in the audit
+     trail with your identity, the model version and the reason below.</p>
+  <label for="ovr-band">NEW PRIORITY BAND</label>
+  <select id="ovr-band">
+    <option value="1">1 — immediate</option><option value="2">2 — emergent</option>
+    <option value="3" selected>3 — urgent</option><option value="4">4 — less urgent</option>
+    <option value="5">5 — non-urgent</option>
+  </select>
+  <label for="ovr-reason">REASON CODE</label>
+  <select id="ovr-reason">
+    <option value="reassessed_at_bedside">Reassessed at bedside</option>
+    <option value="clinically_well">Clinically well on examination</option>
+    <option value="known_baseline">Vitals are patient's known baseline</option>
+    <option value="artefact">Reading is an artefact</option>
+    <option value="resource_constraint">Resource constraint</option>
+    <option value="other">Other</option>
+  </select>
+  <div class="warn" id="ovr-warn" hidden>
+    This lowers the patient's priority. Only a clinician may do this &mdash; no
+    model output can.</div>
+  <div class="acts" style="margin-top:18px">
+    <button value="ok" id="ovr-ok">RECORD OVERRIDE</button>
+    <button value="cancel">CANCEL</button>
+  </div>
+</form></dialog>
+
 <script>
 const board = document.getElementById('board');
+const dlg = document.getElementById('ovr');
+let target = null, currentBand = 3;
+
+function openOverride(stayId, band){
+  target = stayId; currentBand = band;
+  document.getElementById('ovr-band').value = String(band);
+  syncWarn();
+  dlg.showModal();
+}
+function syncWarn(){
+  const chosen = Number(document.getElementById('ovr-band').value);
+  document.getElementById('ovr-warn').hidden = chosen <= currentBand;
+}
+document.getElementById('ovr-band').addEventListener('change', syncWarn);
+dlg.addEventListener('close', () => {
+  if(dlg.returnValue !== 'ok' || target === null) return;
+  const band = document.getElementById('ovr-band').value;
+  const reason = document.getElementById('ovr-reason').value;
+  fetch(`/api/override/${target}/${band}?reason_code=${reason}`, {method:'POST'});
+  target = null;
+});
+function accept(stayId){
+  fetch(`/api/override/${stayId}/0?reason_code=accepted`, {method:'POST'});
+}
 
 function render(s){
   document.getElementById('waiting').textContent = s.waiting;
@@ -90,6 +159,10 @@ function render(s){
       `<span class="tag">${r.readings} readings</span>`
     ].join('');
     const over = r.overdue_by > 0 ? `<div class="over">${r.overdue_by}m past safe wait</div>` : '';
+    const acts = r.signed_off ? '' : `<div class="acts">
+        <button onclick="accept(${r.stay_id})">ACCEPT</button>
+        <button class="down" onclick="openOverride(${r.stay_id}, ${r.band})">OVERRIDE</button>
+      </div>`;
     const age = r.age != null ? `${Math.round(r.age)}${r.gender||''}` : '—';
     return `<div class="${cls}">
       <div class="band">${r.band}${from}</div>
@@ -97,6 +170,7 @@ function render(s){
         <div class="who">${r.complaint}<span>${age} · #${r.stay_id}</span></div>
         <div class="why">${why}</div>
         <div class="tags">${tags}</div>
+        ${acts}
       </div>
       <div class="meta">waited ${r.waited}m${over}</div>
     </div>`;

@@ -139,3 +139,26 @@ def test_a_measured_field_still_gates_when_absent_for_this_patient():
     result = gate({"sbp": 120, "age": 40}, available)   # o2sat absent
     assert "RF02" in {r.id for r in result.unresolved}
     assert result.needs_measurement
+
+
+# --- age-banded thresholds -------------------------------------------------
+
+def test_hypotension_threshold_is_age_banded():
+    """SBP 88 is shock in an adult and normal in a three-year-old."""
+    adult = {**WELL, "age": 40, "sbp": 88}
+    child = {**WELL, "age": 3, "sbp": 88}
+    assert "RF03" in fired_ids(adult)
+    assert "RF03" not in fired_ids(child)
+
+
+def test_children_still_gate_at_their_own_threshold():
+    """Age banding must not become a blanket exemption for children."""
+    infant = {**WELL, "age": 0.5, "sbp": 62}
+    assert "RF03" in fired_ids(infant)
+    toddler = {**WELL, "age": 3, "sbp": 70}      # threshold is 70 + 2*3 = 76
+    assert "RF03" in fired_ids(toddler)
+
+
+def test_unknown_age_assumes_the_adult_threshold():
+    unknown = {k: v for k, v in WELL.items() if k != "age"}
+    assert "RF03" in fired_ids({**unknown, "sbp": 85})

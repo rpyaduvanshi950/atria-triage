@@ -77,6 +77,9 @@ async def degraded(on: int) -> dict:
 
 @app.post("/api/override/{stay_id}/{band}")
 async def override(stay_id: int, band: int, reason_code: str = "clinical_judgement") -> dict:
+    """band 0 means accept the recommendation as-is and sign off."""
+    if band == 0:
+        band = engine.patients[stay_id].band
     entry = engine.override(stay_id, band, reason_code, clinician="nurse.demo")
     await _broadcast()
     return entry
