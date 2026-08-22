@@ -85,6 +85,15 @@ async def override(stay_id: int, band: int, reason_code: str = "clinical_judgeme
     return entry
 
 
+@app.get("/api/audit")
+async def audit(limit: int = 60) -> JSONResponse:
+    intact, note = engine.audit.verify()
+    return JSONResponse({
+        "intact": intact, "note": note, "entries": len(engine.audit),
+        "rows": json.loads(json.dumps(engine.audit.as_rows(limit), default=str)),
+    })
+
+
 @app.websocket("/ws")
 async def ws(websocket: WebSocket) -> None:
     await websocket.accept()

@@ -1,14 +1,18 @@
-.PHONY: help setup test status demo extract-yale clean
+.PHONY: help setup test test-all status demo scenarios eval fairness figures report extract-yale clean
 
 help:
 	@echo "ATRIA — Accenture Innovation Challenge 2026, Track 2"
 	@echo ""
 	@echo "  make setup         create .venv and install dependencies"
-	@echo "  make test          run the full test suite"
+	@echo "  make test          run the test suite (skips slow measurement runs)"
+	@echo "  make test-all      everything, including figure and report generation"
 	@echo "  make demo          start the live board on :8000"
 	@echo "  make status        show which data sources are ready"
 	@echo "  make scenarios     run the six demo scenarios"
 	@echo "  make eval          latency, cross-site and Layer 2 lead time"
+	@echo "  make fairness      subgroup audit and mitigation"
+	@echo "  make figures       export the deck figures"
+	@echo "  make report        regenerate docs/results.md from live measurements"
 	@echo "  make extract-yale  extract the Yale slim CSV (needs R)"
 
 setup:
@@ -17,7 +21,10 @@ setup:
 	.venv/bin/pip install --quiet -r requirements.txt
 
 test:
-	.venv/bin/python -m pytest tests/ -q
+	.venv/bin/python -m pytest tests/ -m "not slow"
+
+test-all:
+	.venv/bin/python -m pytest tests/
 
 demo:
 	.venv/bin/uvicorn service.app:app --host 127.0.0.1 --port 8000
@@ -31,6 +38,15 @@ eval:
 	@.venv/bin/python -m eval.lead_time
 	@echo ""
 	@.venv/bin/python -m eval.cross_site
+
+fairness:
+	.venv/bin/python -m eval.fairness
+
+figures:
+	.venv/bin/python -m eval.figures
+
+report: figures
+	.venv/bin/python -m eval.report
 
 status:
 	@.venv/bin/python -c "import data.loaders as L; \
