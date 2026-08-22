@@ -10,17 +10,72 @@ ATRIA re-ranks every waiting patient continuously from vitals already being
 recorded. It changes **order of attention**, not clinical treatment. It may
 escalate on its own; it may never de-escalate on its own.
 
-## Quick start
+## Running it
 
 ```bash
-make setup      # venv + dependencies
-make test       # 94 tests
-make demo       # live board at http://127.0.0.1:8000
-make status     # which data sources are ready
-make scenarios  # the six demo scenarios, scripted
-make eval       # latency, cross-site, Layer 2 lead time
-make report     # regenerate docs/results.md + figures from live measurements
+git clone https://github.com/rpyaduvanshi950/atria-triage.git
+cd atria-triage
+make setup          # one-off: creates .venv and installs dependencies
+make demo           # starts the live board
 ```
+
+Then open **<http://127.0.0.1:8000>**. Ctrl-C to stop.
+
+**Give it about ten seconds.** On startup it trains the Layer 1 scorer on 3,000
+synthetic patients, so the board reads *"waiting for the first arrival…"* until
+that finishes. Then patients begin arriving and the queue reorders itself live.
+The shift loops, so the board is never empty while you are recording.
+
+### Things to try while it is running
+
+| | |
+|---|---|
+| **AUDIT** button, top right | The hash-chained trail — every entry with its hash and predecessor, and a live chain-integrity indicator |
+| **OVERRIDE** on any row | Pick a *higher* band number and the downgrade warning appears. That is the move no model is permitted to make; it writes to the audit log with a structured reason code |
+| Kill the model service | `curl -X POST http://127.0.0.1:8000/api/degraded/1` — the banner appears and Layer 0 keeps gating. `/0` restores it |
+
+### For the video, use the scripted run instead
+
+```bash
+make scenarios
+```
+
+Runs all six demo scenarios deterministically through the same engine and prints
+what happened. Same result every time, so takes are reproducible. `make demo` is
+the live board; `make scenarios` is what you narrate against.
+
+### Everything else
+
+```bash
+make test           # 92 tests (skips the slow measurement runs)
+make test-all       # all 94, including figure and report generation
+make status         # which data sources are loadable right now
+make eval           # latency, cross-site, Layer 2 lead time
+make fairness       # subgroup audit and mitigation
+make report         # regenerate docs/results.md and the deck figures
+make extract-yale   # one-off Yale extraction (needs R — see data/README.md)
+```
+
+`make help` lists all of them.
+
+## What is built
+
+A working end-to-end prototype, not a notebook.
+
+- **Four layers**, wired together in a live queue engine — deterministic gate,
+  acuity scorer with conformal confidence, trajectory re-ranker, human authority
+  with a tamper-evident audit trail.
+- **A replay clock** with speed and surge multipliers that turns a static
+  dataset into a live-feeling ED, plus a 3x surge mode.
+- **A nurse-facing board** over a websocket — rows reorder as patients escalate.
+  Zero dependencies: no React, no build step, no CDN.
+- **A calibrated synthetic generator** fitted to real Isfahan priors, supplying
+  the paediatric, surge and deterioration cases no open snapshot dataset carries.
+- **Six scripted scenarios** covering every minimum expectation in the brief.
+- **An evaluation suite** — fairness, latency, cross-site, Layer 2 lead time —
+  that regenerates the deck's figures and numbers on demand.
+- **94 tests**, including one per red-flag rule and a proof that no machine
+  source can suppress a red flag.
 
 ## Layers
 
@@ -73,10 +128,11 @@ data/         loaders + the three datasets + provenance
 layer0..3/    the four layers
 service/      replay clock, queue engine, FastAPI + websocket
 dashboard/    the nurse board — design decisions in NOTES.md
-eval/         vs_baseline, fairness, cross_site, lead_time, latency
-scenarios/    the six seeded demo scenarios             (day 3)
-tests/        40 tests, one per red-flag rule
+eval/         fairness, cross_site, lead_time, latency, figures, report
+scenarios/    the six seeded demo scenarios + runner
+tests/        94 tests — one per red-flag rule, the invariant, the audit chain
 docs/         business proposal, measured results, figures, deck changes
+Makefile      every command above
 ```
 
 ## Layer 0's three outcomes
