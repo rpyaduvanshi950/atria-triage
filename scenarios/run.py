@@ -8,8 +8,11 @@ from service.clock import build_events
 from service.queue import QueueEngine
 
 
-def play(scenario, scorer, *, degraded: bool = False, surge: float = 1.0) -> QueueEngine:
-    q = QueueEngine(scorer)
+def play(scenario, scorer, *, degraded: bool = False, surge: float = 1.0,
+         slots: int = 0) -> QueueEngine:
+    # slots=0: scenario fixtures exercise triage logic, not throughput. Nobody
+    # is taken through, so the patient under test stays on the board.
+    q = QueueEngine(scorer, slots=slots)
     q.degraded = degraded
     for e in build_events(scenario.build(), surge=surge):
         q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)

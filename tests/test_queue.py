@@ -15,7 +15,7 @@ def scorer():
 
 @pytest.fixture(scope="module")
 def played(scorer):
-    q = QueueEngine(scorer)
+    q = QueueEngine(scorer, slots=0)          # no throughput: test the queue itself
     for e in build_events(generate(30, seed=21)):
         q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
     return q
@@ -23,6 +23,32 @@ def played(scorer):
 
 def test_every_arrival_is_admitted_to_the_queue(played):
     assert len(played.patients) == 30
+
+
+def test_patients_are_seen_and_leave_when_there_is_capacity(scorer):
+    """With treatment slots, the queue drains instead of growing without bound."""
+    q = QueueEngine(scorer, slots=3)
+    for e in build_events(generate(40, seed=21, hours=3.0)):
+        q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
+    assert q.seen, "nobody was ever taken through"
+    assert len(q.patients) < 40, "the queue never drained"
+    kinds = {e.kind for e in q.audit}
+    assert {"seen", "departure"} <= kinds
+
+
+def test_patients_in_treatment_stay_visible_on_the_board(scorer):
+    """
+    Checked mid-shift, not at the end: by the final event everyone has been
+    treated and discharged, so the board is legitimately empty.
+    """
+    q = QueueEngine(scorer, slots=3)
+    seen_in_treatment = False
+    for e in build_events(generate(30, seed=21, hours=3.0)):
+        q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
+        if any(r["state"] == "IN TREATMENT" for r in q.snapshot()["rows"]):
+            seen_in_treatment = True
+            break
+    assert seen_in_treatment, "a nurse must still see who is in a bay"
 
 
 def test_the_queue_actually_moves(played):
@@ -59,7 +85,7 @@ def test_scoring_stays_under_the_latency_budget(played):
 
 
 def test_only_the_clinician_can_lower_a_band(played, scorer):
-    q = QueueEngine(scorer)
+    q = QueueEngine(scorer, slots=0)
     for e in build_events(generate(12, seed=5)):
         q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
     sid = next(iter(q.patients))
@@ -73,7 +99,7 @@ def test_only_the_clinician_can_lower_a_band(played, scorer):
 
 
 def test_override_is_written_to_the_audit_log(played, scorer):
-    q = QueueEngine(scorer)
+    q = QueueEngine(scorer, slots=0)
     for e in build_events(generate(12, seed=5)):
         q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
     before = len(q.events_log)
@@ -83,7 +109,7 @@ def test_override_is_written_to_the_audit_log(played, scorer):
 
 def test_degraded_mode_keeps_gating_without_the_model(scorer):
     """Scenario 06: kill the model, Layer 0 carries on."""
-    q = QueueEngine(scorer)
+    q = QueueEngine(scorer, slots=0)
     q.degraded = True
     for e in build_events(generate(20, seed=9)):
         q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)

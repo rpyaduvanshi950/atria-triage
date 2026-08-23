@@ -34,6 +34,7 @@
        padding:12px 16px}
   .row.ESCALATED{border-left-color:var(--signal)}
   .row.AWAITING{border-left-color:var(--accent)}
+  .row[class*="TREATMENT"]{opacity:.55;border-left-color:var(--ink-3)}
   .row.red{border-left-color:var(--critical)}
   .band{font-family:var(--mono);font-size:26px;line-height:1;font-variant-numeric:tabular-nums}
   .band small{display:block;font-size:10px;color:var(--signal);margin-top:4px;letter-spacing:.04em}
@@ -50,6 +51,46 @@
   .meta{text-align:right;font-family:var(--mono);font-size:12px;color:var(--ink-3);white-space:nowrap}
   .meta .over{color:var(--signal)}
   .empty{color:var(--ink-3);font-family:var(--mono);font-size:13px;padding:40px 0;text-align:center}
+  .tick{font-family:var(--mono);font-size:11.5px;border-bottom:1px solid var(--rule);
+        background:var(--surface);padding:8px 24px;display:flex;gap:20px;overflow-x:auto;
+        white-space:nowrap;scrollbar-width:none}
+  .tick span{color:var(--ink-3)}
+  .tick b{font-weight:500}
+  .tick .arrived b{color:var(--ink-2)}
+  .tick .seen b{color:var(--accent)}
+  .tick .left b{color:var(--ink-3)}
+  .tick .escalated b{color:var(--signal)}
+  .legend{display:flex;gap:20px;flex-wrap:wrap;align-items:center;padding:8px 24px;
+          border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:11px;
+          color:var(--ink-3);background:var(--ground)}
+  .legend i{display:inline-block;width:9px;height:9px;margin-right:7px;vertical-align:-1px}
+  .sw.red{background:var(--critical)} .sw.sig{background:var(--signal)}
+  .sw.acc{background:var(--accent)}   .sw.dim{background:var(--ink-3);opacity:.55}
+  .legend .hint{margin-left:auto;color:var(--ink-3)}
+  .legend a{color:var(--accent)}
+  .btnlink{font-family:var(--mono);font-size:11px;letter-spacing:.05em;padding:5px 11px;
+           border:1px solid var(--rule);color:var(--ink-2);text-decoration:none;margin-left:4px}
+  .btnlink:hover{border-color:var(--accent);color:var(--accent)}
+
+  #guide{max-width:720px;width:94%}
+  #guide .dlg{padding:26px 30px 24px;max-height:82vh;overflow-y:auto}
+  #guide h2{font-size:21px;margin:0 0 3px}
+  #guide .say{color:var(--ink-2);font-size:13.5px;margin:0 0 20px;max-width:56ch;line-height:1.55}
+  #guide h3{font-family:var(--sans);font-size:11px;letter-spacing:.13em;text-transform:uppercase;
+            color:var(--accent);margin:22px 0 9px;font-weight:600}
+  #guide dl{display:grid;grid-template-columns:132px minmax(0,1fr);gap:9px 16px;margin:0;
+            font-size:13.5px;line-height:1.5}
+  @media (max-width:560px){#guide dl{grid-template-columns:1fr;gap:3px 0}
+                           #guide dd{margin-bottom:9px}}
+  #guide dt{font-family:var(--mono);font-size:11.5px;color:var(--ink);padding-top:2px}
+  #guide dd{margin:0;color:var(--ink-2)}
+  #guide dd b{color:var(--ink);font-weight:600}
+  #guide .inv{margin-top:10px;padding:12px 14px;border-left:2px solid var(--accent);
+              background:var(--surface-2);font-family:var(--mono);font-size:11.5px;
+              line-height:1.75;color:var(--ink-2)}
+  #guide .inv em{color:var(--ink-3);font-style:normal}
+  .tkt{font-family:var(--mono);font-size:12px;color:var(--accent);
+       border:1px solid var(--rule);padding:1px 6px;margin-right:9px}
   .acts{display:flex;gap:6px;margin-top:9px}
   button{font-family:var(--mono);font-size:11px;letter-spacing:.05em;padding:5px 11px;
          background:transparent;color:var(--ink-2);border:1px solid var(--rule);cursor:pointer}
@@ -89,10 +130,14 @@
   <span class="sub">a live queue, not a label</span>
   <div class="stats">
     <span><b id="waiting">0</b> waiting</span>
+    <span><b id="intreat">0</b> in treatment</span>
+    <span><b id="seen">0</b> seen</span>
     <span><b id="escalated">0</b> escalated</span>
     <span>p95 <b id="p95">–</b> ms</span>
     <span class="live"><span class="dot"></span><span id="clock">–</span></span>
     <button onclick="toggleAudit()" style="margin-left:4px">AUDIT</button>
+    <button onclick="document.getElementById('guide').showModal()">? GUIDE</button>
+    <a class="btnlink" href="/guide" target="_blank" rel="noopener">FULL GUIDE &#8599;</a>
   </div>
 </header>
 <div class="audit" id="audit">
@@ -100,7 +145,96 @@
   <div class="scroll"><table id="audit-tbl"></table></div>
 </div>
 <div class="banner" id="banner">DEGRADED MODE · model service unavailable · Layer 0 red-flag gate still active</div>
+<div class="tick" id="tick"></div>
+<div class="legend">
+  <span><i class="sw red"></i>red flag &mdash; rule fired on recorded values</span>
+  <span><i class="sw sig"></i>escalated by a machine &mdash; never downward</span>
+  <span><i class="sw acc"></i>needs a human decision</span>
+  <span><i class="sw dim"></i>in a treatment bay</span>
+  <span class="hint">band 1 = most urgent &nbsp;·&nbsp; every score carries a confidence &nbsp;·&nbsp;
+    <a href="#" onclick="document.getElementById('guide').showModal();return false;">what am I looking at?</a></span>
+</div>
 <main id="board"><div class="empty">waiting for the first arrival…</div></main>
+
+<dialog id="guide"><form class="dlg" method="dialog">
+  <h2>What am I looking at?</h2>
+  <p class="say">A live queue, not a label. ATRIA re-ranks everyone waiting, continuously, from
+     vitals already being recorded. It changes <b>the order of attention</b> &mdash; never the
+     clinical care. It may escalate on its own; it may never de-escalate on its own.</p>
+
+  <h3>Reading a row</h3>
+  <dl>
+    <dt>A-16</dt><dd>The <b>ticket</b>. The board reorders constantly, so this is how you follow a
+      person rather than a position.</dd>
+    <dt>2 &uarr; from 3</dt><dd>The <b>priority band</b>, 1 most urgent to 5 least, matching ESI.
+      The arrow means a machine raised it, and says where from. There is never a downward arrow.</dd>
+    <dt>the reason line</dt><dd>Why this band, in plain language &mdash; a fired rule, a moving
+      vital, or the features driving the score.</dd>
+    <dt>waited / past safe wait</dt><dd>Time in the queue, and time beyond the re-assessment
+      interval for their band. Being overdue forces a re-look; it does not by itself make anyone
+      sicker.</dd>
+  </dl>
+
+  <h3>Tags</h3>
+  <dl>
+    <dt>RED FLAG</dt><dd>A deterministic rule fired on values someone actually recorded.
+      <b>No model output can suppress it.</b></dd>
+    <dt>MEASURE</dt><dd>A rule would fire <i>if</i> a missing vital were at its worst plausible
+      value. Not an emergency &mdash; an instruction to go and take the reading. Unknown is not
+      normal, but it is not the same as critical either.</dd>
+    <dt>HIGH / MODERATE / LOW</dt><dd>Confidence, from a conformal prediction set with a 95%
+      coverage guarantee. <b>No score is ever shown without one.</b></dd>
+    <dt>missing: …</dt><dd>Vitals never recorded. A score built on incomplete data says so on
+      its face.</dd>
+  </dl>
+
+  <h3>Row states</h3>
+  <dl>
+    <dt>STABLE</dt><dd>Nothing has changed since sign-off.</dd>
+    <dt>ESCALATED</dt><dd>A machine raised this patient's priority.</dd>
+    <dt>AWAITING</dt><dd>A recommendation needs a human decision. Sorts to the top.</dd>
+    <dt>IN TREATMENT</dt><dd>Taken through to a bay. Dimmed and sorted last, but still visible
+      &mdash; a nurse needs to see who is where, not only who is queueing.</dd>
+  </dl>
+
+  <h3>The four layers</h3>
+  <dl>
+    <dt>0 &nbsp;gate</dt><dd><b>Decides.</b> Ten cited rules, age-banded, no model and no network,
+      so it keeps working when everything else is down.</dd>
+    <dt>1 &nbsp;scorer</dt><dd><b>Recommends.</b> The starting band, reason and confidence, from
+      the twelve fields available within five minutes.</dd>
+    <dt>2 &nbsp;re-ranker</dt><dd><b>Re-orders.</b> Watches trajectory, not snapshots. Most of the
+      movement you see comes from here.</dd>
+    <dt>3 &nbsp;human</dt><dd><b>Decides.</b> Only the nurse may downgrade. Every decision appends
+      to a hash-chained log &mdash; open AUDIT to see it.</dd>
+  </dl>
+  <div class="inv">
+    if source is HUMAN: return proposed &nbsp;<em># nurse authority is absolute</em><br>
+    return min(current, proposed) &nbsp;&nbsp;&nbsp;<em># machines escalate, never relent</em>
+  </div>
+
+  <h3>Worth watching for</h3>
+  <dl>
+    <dt>a quiet climb</dt><dd>Someone arrives unremarkable at band 3, then their SpO&#8322; and blood
+      pressure drift. Twenty minutes later they carry an arrow, and nobody had re-checked them.</dd>
+    <dt>the queue draining</dt><dd>Three bays. When one frees, the highest-priority waiting patient
+      is taken through and later discharged. Follow it in the ticker above.</dd>
+    <dt>an override</dt><dd>Pick a <i>higher</i> band number and a warning appears &mdash; that is a
+      downgrade, the one move no model here may make.</dd>
+    <dt>the lights out</dt><dd><span style="font-family:var(--mono);font-size:11.5px">curl -X POST
+      localhost:8000/api/degraded/1</span> &mdash; the model dies, Layer 0 keeps gating.</dd>
+  </dl>
+
+  <p class="say" style="margin:22px 0 0;font-size:12.5px">Everyone on this board is synthetic,
+     generated from distributions fitted to 143,000 real Iranian ED records and validated against
+     real vital-sign sequences from Boston. The performance figures come from real patients; the
+     people on screen do not.</p>
+
+  <div class="acts" style="margin-top:20px">
+    <button value="ok">CLOSE</button>
+    <a class="btnlink" href="/guide" target="_blank" rel="noopener" style="padding:5px 11px">OPEN THE FULL GUIDE &#8599;</a>
+  </div>
+</form></dialog>
 
 <dialog id="ovr"><form class="dlg" method="dialog">
   <h2>Override priority</h2>
@@ -160,6 +294,12 @@ function accept(stayId){
 function render(s){
   document.getElementById('waiting').textContent = s.waiting;
   document.getElementById('escalated').textContent = s.escalated;
+  document.getElementById('intreat').textContent = `${s.in_treatment ?? 0}/${s.slots ?? 0}`;
+  document.getElementById('seen').textContent = s.seen ?? 0;
+  const verb = {arrived:'arrived', seen:'taken through', left:'left', escalated:'escalated'};
+  document.getElementById('tick').innerHTML = (s.ticker||[]).map(t =>
+    `<span class="${t.kind}">${t.at} <b>${t.ticket} ${verb[t.kind]||t.kind}</b> · ${t.detail}</span>`
+  ).join('') || '<span>no movement yet</span>';
   document.getElementById('p95').textContent = s.p95_ms ?? '–';
   document.getElementById('clock').textContent = (s.now || '').slice(11,16);
   document.getElementById('banner').classList.toggle('on', !!s.degraded);
@@ -167,7 +307,7 @@ function render(s){
   if(!s.rows.length){ board.innerHTML = '<div class="empty">waiting for the first arrival…</div>'; return; }
 
   board.innerHTML = s.rows.map(r => {
-    const cls = ['row', r.state, r.red_flag ? 'red' : ''].join(' ');
+    const cls = ['row', r.state.replace(' ','-'), r.red_flag ? 'red' : ''].join(' ');
     const from = r.band_before ? `<small>&uarr; from ${r.band_before}</small>` : '';
     const why  = r.red_flag || (r.reasons||[]).join(' · ') || r.needs_measurement || '—';
     const tags = [
@@ -177,16 +317,19 @@ function render(s){
       (r.missing||[]).length ? `<span class="tag">missing: ${r.missing.join(', ')}</span>` : '',
       `<span class="tag">${r.readings} readings</span>`
     ].join('');
-    const over = r.overdue_by > 0 ? `<div class="over">${r.overdue_by}m past safe wait</div>` : '';
-    const acts = r.signed_off ? '' : `<div class="acts">
+    const over = r.state === 'IN TREATMENT'
+      ? '<div>in a bay</div>'
+      : (r.overdue_by > 0 ? `<div class="over">${r.overdue_by}m past safe wait</div>` : '');
+    const acts = (r.signed_off || r.state === 'IN TREATMENT') ? '' : `<div class="acts">
         <button onclick="accept(${r.stay_id})">ACCEPT</button>
         <button class="down" onclick="openOverride(${r.stay_id}, ${r.band})">OVERRIDE</button>
       </div>`;
     const age = r.age != null ? `${Math.round(r.age)}${r.gender||''}` : '—';
+    const tkt = `<span class="tkt">${r.ticket||'—'}</span>`;
     return `<div class="${cls}">
       <div class="band">${r.band}${from}</div>
       <div>
-        <div class="who">${r.complaint}<span>${age} · #${r.stay_id}</span></div>
+        <div class="who">${tkt}${r.complaint}<span>${age}</span></div>
         <div class="why">${why}</div>
         <div class="tags">${tags}</div>
         ${acts}

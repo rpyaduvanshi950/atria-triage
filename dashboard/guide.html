@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reading the ATRIA Board · ATRIA</title>
+<meta name="description" content="How to run the ATRIA demo, what every element on the board means, and what to click.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+img{max-width:100%;height:auto}
+
+:root{
+  --ground:#F6F8F7; --surface:#FFFFFF; --surface-2:#EDF2F0; --board:#101B19;
+  --ink:#131F1D; --ink-2:#546562; --ink-3:#7E8F8B;
+  --rule:#DBE3E1; --rule-strong:#C3CFCC;
+  --accent:#0F6E62; --accent-soft:#E1F0ED;
+  --signal:#AF5218; --signal-soft:#F8EBDF;
+  --critical:#9E3025; --critical-soft:#F8E6E3;
+  --shadow:0 1px 2px rgba(19,31,29,.05), 0 10px 30px -20px rgba(19,31,29,.35);
+  --font-d:"IBM Plex Sans Condensed","Helvetica Neue",Arial,sans-serif;
+  --font-b:"Source Serif 4",Georgia,"Times New Roman",serif;
+  --font-m:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0D1513; --surface:#15201E; --surface-2:#1D2B28; --board:#0A1211;
+    --ink:#E7EDEA; --ink-2:#98A9A5; --ink-3:#72837F;
+    --rule:#26352F; --rule-strong:#34473F;
+    --accent:#45C4B2; --accent-soft:#123A35;
+    --signal:#E8903F; --signal-soft:#38260F;
+    --critical:#E5766A; --critical-soft:#391D19;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -20px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0D1513; --surface:#15201E; --surface-2:#1D2B28; --board:#0A1211;
+  --ink:#E7EDEA; --ink-2:#98A9A5; --ink-3:#72837F;
+  --rule:#26352F; --rule-strong:#34473F;
+  --accent:#45C4B2; --accent-soft:#123A35;
+  --signal:#E8903F; --signal-soft:#38260F;
+  --critical:#E5766A; --critical-soft:#391D19;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -20px rgba(0,0,0,.8);
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font-family:var(--font-b);font-size:17px;line-height:1.62;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{font-family:var(--font-d);font-weight:600;text-wrap:balance;margin:0;line-height:1.14}
+p{margin:0}
+a{color:var(--accent)}
+code{font-family:var(--font-m);font-size:.85em;background:var(--surface-2);padding:1px 5px}
+
+.wrap{max-width:860px;margin:0 auto;padding:0 26px}
+.wide{max-width:1080px;margin:0 auto;padding:0 26px}
+.tail{padding-bottom:110px}
+
+.mast{padding:60px 0 26px;border-bottom:2px solid var(--ink)}
+.eyebrow{font-family:var(--font-m);font-size:11.5px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--signal);margin-bottom:18px}
+.mast h1{font-size:clamp(40px,7vw,66px);font-weight:700;letter-spacing:-.022em;line-height:.98}
+.mast .sub{font-size:19.5px;color:var(--ink-2);margin-top:16px;max-width:60ch;line-height:1.5}
+.mast .sub em{font-style:italic;color:var(--ink)}
+
+section{padding-top:52px;scroll-margin-top:20px}
+h2{font-size:clamp(25px,3.2vw,32px);letter-spacing:-.012em}
+.lede{font-size:18px;color:var(--ink-2);max-width:66ch;margin-top:10px}
+section>p{margin-top:15px;max-width:68ch}
+h3{font-size:19px;margin-top:32px}
+ul,ol{margin:13px 0 0;padding-left:1.15em;max-width:68ch}
+li{margin-bottom:7px}
+li::marker{color:var(--ink-3)}
+strong{font-weight:600;color:var(--ink)}
+
+pre{background:var(--surface);border:1px solid var(--rule);padding:16px 18px;overflow-x:auto;
+  margin-top:18px;font-family:var(--font-m);font-size:13px;line-height:1.7;color:var(--ink-2)}
+pre b{color:var(--ink);font-weight:500}
+pre i{color:var(--ink-3);font-style:normal}
+
+/* board replica */
+.replica{background:var(--board);border:1px solid var(--rule-strong);
+  padding:18px 20px 20px;margin-top:24px;box-shadow:var(--shadow);color:#E7EDEA}
+.rep-head{display:flex;gap:14px;flex-wrap:wrap;align-items:baseline;
+  padding-bottom:11px;border-bottom:1px solid #26352F;font-family:var(--font-m);font-size:11px}
+.rep-head .nm{font-family:var(--font-d);font-size:15.5px;font-weight:600;letter-spacing:.02em}
+.rep-head .st{margin-left:auto;display:flex;gap:14px;color:#72837F;flex-wrap:wrap}
+.rep-head .st b{color:#45C4B2;font-weight:500}
+.rep-head .bt{border:1px solid #26352F;padding:3px 8px;color:#98A9A5;font-size:10px;letter-spacing:.05em}
+.rep-tick{display:flex;gap:16px;padding:8px 0;border-bottom:1px solid #26352F;
+  font-family:var(--font-m);font-size:10.5px;color:#72837F;overflow-x:auto;white-space:nowrap}
+.rep-tick b{font-weight:500}
+.rep-tick .a b{color:#98A9A5}.rep-tick .s b{color:#45C4B2}.rep-tick .e b{color:#E8903F}
+.rep-leg{display:flex;gap:16px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid #26352F;
+  font-family:var(--font-m);font-size:10px;color:#72837F}
+.rep-leg i{display:inline-block;width:8px;height:8px;margin-right:6px;vertical-align:-1px}
+
+.rrow{display:grid;grid-template-columns:50px minmax(0,1fr) auto;gap:13px;
+  padding:12px 13px;margin-top:9px;background:#15201E;border:1px solid #26352F;
+  border-left:3px solid transparent}
+.rrow.esc{border-left-color:#E8903F}
+.rrow.red{border-left-color:#E5766A}
+.rrow.tr{opacity:.5;border-left-color:#72837F}
+.rband{font-family:var(--font-m);font-size:24px;line-height:1;font-variant-numeric:tabular-nums}
+.rband small{display:block;font-size:9px;color:#E8903F;margin-top:4px;letter-spacing:.03em}
+.rwho{font-family:var(--font-d);font-weight:600;font-size:15px}
+.rtkt{font-family:var(--font-m);font-size:11px;color:#45C4B2;border:1px solid #26352F;
+  padding:1px 6px;margin-right:8px}
+.rwho span{color:#72837F;font-weight:400;font-family:var(--font-m);font-size:11px;margin-left:7px}
+.rwhy{color:#98A9A5;font-size:12.5px;margin-top:3px}
+.rtags{margin-top:6px;display:flex;gap:5px;flex-wrap:wrap}
+.rtag{font-family:var(--font-m);font-size:9.5px;letter-spacing:.05em;padding:2px 6px;
+  border:1px solid #26352F;color:#72837F}
+.rtag.red{border-color:#E5766A;color:#E5766A}
+.rtag.meas{border-color:#E8903F;color:#E8903F}
+.rtag.hi{border-color:#45C4B2;color:#45C4B2}
+.rmeta{text-align:right;font-family:var(--font-m);font-size:10.5px;color:#72837F;white-space:nowrap}
+.rmeta .ov{color:#E8903F}
+.racts{display:flex;gap:5px;margin-top:8px}
+.racts span{font-family:var(--font-m);font-size:9.5px;letter-spacing:.05em;
+  padding:4px 9px;border:1px solid #26352F;color:#98A9A5}
+
+/* key list */
+.key{display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule);margin-top:22px}
+.key div{background:var(--surface);padding:14px 17px;display:grid;
+  grid-template-columns:136px minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:600px){.key div{grid-template-columns:1fr;gap:5px}}
+.key dt{font-family:var(--font-m);font-size:11.5px;letter-spacing:.04em;color:var(--accent);padding-top:3px}
+.key dd{margin:0;font-size:15.5px;color:var(--ink-2);line-height:1.5}
+.key dd b{color:var(--ink);font-weight:600}
+
+.note{background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--accent);
+  padding:19px 23px;margin-top:22px;box-shadow:var(--shadow)}
+.note.warn{border-left-color:var(--signal)}
+.note.stop{border-left-color:var(--critical)}
+.note .tag{font-family:var(--font-d);font-size:10.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent);margin-bottom:7px}
+.note.warn .tag{color:var(--signal)}
+.note.stop .tag{color:var(--critical)}
+.note p+p{margin-top:11px}
+.note p{max-width:none}
+
+/* steps */
+.steps{counter-reset:s;display:flex;flex-direction:column;gap:0;margin-top:22px;
+  border:1px solid var(--rule);background:var(--surface);box-shadow:var(--shadow)}
+.step{display:grid;grid-template-columns:52px minmax(0,1fr);border-bottom:1px solid var(--rule)}
+.step:last-child{border-bottom:none}
+.step::before{counter-increment:s;content:counter(s);font-family:var(--font-m);font-size:12px;
+  color:var(--accent);padding:17px 0 0 18px}
+.step div{padding:15px 20px 17px}
+.step h4{font-size:16.5px;margin:0 0 4px}
+.step p{font-size:15.5px;color:var(--ink-2);max-width:none;margin:0}
+.step .then{margin-top:8px;font-family:var(--font-m);font-size:11.5px;color:var(--accent);line-height:1.6}
+
+/* layers */
+.layers{display:flex;flex-direction:column;margin-top:24px;border:1px solid var(--rule);
+  background:var(--surface);box-shadow:var(--shadow)}
+.lay{display:grid;grid-template-columns:94px minmax(0,1fr);border-bottom:1px solid var(--rule)}
+.lay:last-child{border-bottom:none}
+.lid{font-family:var(--font-m);font-size:11.5px;color:var(--ink-3);padding:17px 0 17px 18px;
+  border-right:1px solid var(--rule)}
+.lbody{padding:16px 21px 18px}
+.lbody h4{font-size:17px;margin:0 0 4px}
+.verdict{font-family:var(--font-m);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  display:inline-block;padding:2px 7px;margin-bottom:9px}
+.v-dec{background:var(--critical-soft);color:var(--critical)}
+.v-rec{background:var(--accent-soft);color:var(--accent)}
+.v-ord{background:var(--signal-soft);color:var(--signal)}
+.v-hum{background:var(--surface-2);color:var(--ink-2)}
+.lbody p{font-size:15.5px;color:var(--ink-2);max-width:none}
+.lbody p strong{color:var(--ink)}
+
+.tw{overflow-x:auto;margin-top:22px;border:1px solid var(--rule);background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:15px}
+th{font-family:var(--font-d);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-3);text-align:left;padding:11px 15px;background:var(--surface-2);
+  border-bottom:1px solid var(--rule-strong);white-space:nowrap}
+td{padding:12px 15px;border-bottom:1px solid var(--rule);vertical-align:top;line-height:1.45}
+tr:last-child td{border-bottom:none}
+td.n{font-family:var(--font-m);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.c{font-family:var(--font-m);font-size:12.5px;white-space:nowrap}
+
+.foot{margin-top:60px;padding-top:20px;border-top:2px solid var(--ink);
+  font-family:var(--font-m);font-size:12.5px;color:var(--ink-3);line-height:1.7}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* standalone-page additions */
+.backbar{position:sticky;top:0;z-index:10;background:var(--surface);
+  border-bottom:1px solid var(--rule);padding:11px 26px;display:flex;gap:16px;
+  align-items:center;font-family:var(--font-m);font-size:11.5px}
+.backbar a{color:var(--accent);text-decoration:none;border:1px solid var(--rule);padding:5px 11px}
+.backbar a:hover{border-color:var(--accent)}
+.backbar span{color:var(--ink-3)}
+.backbar .right{margin-left:auto}
+</style>
+</head>
+<body>
+<nav class="backbar">
+  <a href="/">&larr; back to the board</a>
+  <span>ATRIA · a live queue, not a label</span>
+  <span class="right">Team Digital Ninja</span>
+</nav>
+
+
+<div class="wrap">
+<header class="mast">
+  <div class="eyebrow">ATRIA &nbsp;·&nbsp; how to run and read the demo &nbsp;·&nbsp; Team Digital Ninja</div>
+  <h1>Reading the Board</h1>
+  <p class="sub">How to start it, what every element on screen means, what you can click, and what to do to make each part of the system show itself. ATRIA changes <em>the order of attention</em> — never the clinical care.</p>
+</header>
+
+<!-- ============ start ============ -->
+<section id="start">
+  <h2>Starting it</h2>
+  <p class="lede">Two commands. The first is a one-off.</p>
+<pre><b>make setup</b>      <i># creates .venv and installs dependencies — once</i>
+<b>make demo</b>       <i># starts the server</i></pre>
+  <p>Then open <strong>http://127.0.0.1:8000</strong>. Ctrl-C in the terminal stops it.</p>
+
+  <div class="note warn">
+    <div class="tag">Give it about ten seconds</div>
+    <p>On startup the system trains its acuity scorer on 3,000 synthetic patients before the shift
+      begins. Until that finishes the board reads <em>"waiting for the first arrival…"</em>. That is
+      not a hang. Patients start appearing right after.</p>
+  </div>
+</section>
+</div>
+
+<!-- ============ board replica ============ -->
+<div class="wide">
+<section id="board">
+  <div class="wrap" style="padding:0">
+    <h2>The board</h2>
+    <p class="lede">A faithful replica of the live screen. Every element is doing a job.</p>
+  </div>
+
+  <div class="replica" aria-label="Annotated replica of the ATRIA queue board">
+    <div class="rep-head">
+      <span class="nm">ATRIA · Bay A</span>
+      <span class="st">
+        <span><b>15</b> waiting</span><span><b>3/3</b> in treatment</span>
+        <span><b>7</b> seen</span><span><b>1</b> escalated</span>
+        <span>p95 <b>14</b> ms</span><span>10:03</span>
+        <span class="bt">AUDIT</span><span class="bt">? GUIDE</span>
+      </span>
+    </div>
+    <div class="rep-tick">
+      <span class="e">10:03 <b>A-16 escalated</b> · 3 to 2 — shock index 0.91</span>
+      <span class="a">10:01 <b>A-25 arrived</b> · dyspnea, band 3</span>
+      <span class="s">09:55 <b>A-07 taken through</b> · at band 2</span>
+      <span class="a">09:55 <b>A-15 left</b> · treated, waited 14m</span>
+    </div>
+    <div class="rep-leg">
+      <span><i style="background:#E5766A"></i>red flag</span>
+      <span><i style="background:#E8903F"></i>escalated by a machine</span>
+      <span><i style="background:#45C4B2"></i>needs a human decision</span>
+      <span><i style="background:#72837F;opacity:.55"></i>in a treatment bay</span>
+    </div>
+
+    <div class="rrow red">
+      <div class="rband">1</div>
+      <div>
+        <div class="rwho"><span class="rtkt">A-09</span>collapse<span>71M</span></div>
+        <div class="rwhy">RF02 Critical hypoxaemia; RF03 Hypotension / shock</div>
+        <div class="rtags"><span class="rtag red">RED FLAG</span><span class="rtag hi">HIGH</span><span class="rtag">4 readings</span></div>
+        <div class="racts"><span>ACCEPT</span><span>OVERRIDE</span></div>
+      </div>
+      <div class="rmeta">waited 6m</div>
+    </div>
+
+    <div class="rrow esc">
+      <div class="rband">2<small>&uarr; from 3</small></div>
+      <div>
+        <div class="rwho"><span class="rtkt">A-16</span>nausea and fatigue<span>58F</span></div>
+        <div class="rwhy">SpO2 falling &minus;4% in 30m; SBP falling &minus;22 in 30m</div>
+        <div class="rtags"><span class="rtag">MODERATE</span><span class="rtag">missing: temperature</span><span class="rtag">5 readings</span></div>
+        <div class="racts"><span>ACCEPT</span><span>OVERRIDE</span></div>
+      </div>
+      <div class="rmeta">waited 41m<div class="ov">11m past safe wait</div></div>
+    </div>
+
+    <div class="rrow">
+      <div class="rband">3</div>
+      <div>
+        <div class="rwho"><span class="rtkt">A-21</span>flank pain<span>44M</span></div>
+        <div class="rwhy">cannot rule out critical hypoxaemia — measure o2sat</div>
+        <div class="rtags"><span class="rtag meas">MEASURE</span><span class="rtag">LOW</span><span class="rtag">missing: o2sat, heartrate</span></div>
+        <div class="racts"><span>ACCEPT</span><span>OVERRIDE</span></div>
+      </div>
+      <div class="rmeta">waited 12m</div>
+    </div>
+
+    <div class="rrow tr">
+      <div class="rband">2</div>
+      <div>
+        <div class="rwho"><span class="rtkt">A-07</span>chest pain<span>66F</span></div>
+        <div class="rwhy">shock index 1.04</div>
+        <div class="rtags"><span class="rtag">IN TREATMENT</span></div>
+      </div>
+      <div class="rmeta">waited 22m<div>in a bay</div></div>
+    </div>
+  </div>
+</section>
+</div>
+
+<div class="wrap tail">
+
+<!-- ============ key ============ -->
+<section id="key">
+  <h3>What each part means</h3>
+  <dl class="key">
+    <div><dt>A-16</dt><dd>The <b>ticket</b>. The board reorders constantly, so this is how you follow a person rather than a position.</dd></div>
+    <div><dt>2 &uarr; from 3</dt><dd>The <b>priority band</b>, 1 most urgent to 5 least, matching ESI. The arrow means a machine raised it and says from where. <b>There is never a downward arrow.</b></dd></div>
+    <div><dt>the reason line</dt><dd>Why this band, in plain language — a fired rule, a moving vital, or the features driving the score.</dd></div>
+    <div><dt>RED FLAG</dt><dd>A deterministic rule fired on values someone actually recorded. No model output can suppress it.</dd></div>
+    <div><dt>MEASURE</dt><dd>A rule would fire <i>if</i> a missing vital were at its worst plausible value. Not an emergency — an instruction to go and take the reading.</dd></div>
+    <div><dt>HIGH MODERATE LOW</dt><dd><b>Confidence</b>, from a conformal prediction set with a 95% coverage guarantee. No score is ever shown without one.</dd></div>
+    <div><dt>missing: …</dt><dd>Vitals never recorded. A score built on incomplete data says so on its face.</dd></div>
+    <div><dt>11m past safe wait</dt><dd>Held beyond the re-assessment interval for their band. It forces a human re-look; it does not by itself make anyone sicker.</dd></div>
+    <div><dt>IN TREATMENT</dt><dd>Taken through to a bay. Dimmed and sorted last, but still visible — a nurse needs to see who is where, not only who is queueing.</dd></div>
+    <div><dt>p95 14 ms</dt><dd>How long scoring is taking, 95th percentile. The budget is 400 ms.</dd></div>
+  </dl>
+</section>
+
+<!-- ============ controls ============ -->
+<section id="controls">
+  <h2>Everything you can click</h2>
+  <p class="lede">Four controls. Two live in the header, two on every row that has not yet been signed off.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Control</th><th>Where</th><th>What happens</th></tr></thead>
+      <tbody>
+        <tr><td class="c">? GUIDE</td><td>header</td><td>Opens the same explanation you are reading, condensed, inside the app. Escape closes it.</td></tr>
+        <tr><td class="c">AUDIT</td><td>header</td><td>Toggles the audit trail panel. Every arrival, escalation, override, and discharge, each with its own hash and the hash of the entry before it, plus a live chain-integrity indicator.</td></tr>
+        <tr><td class="c">ACCEPT</td><td>on a row</td><td>Signs off the recommendation as it stands. The row's action buttons disappear and it is marked signed-off. Written to the audit log.</td></tr>
+        <tr><td class="c">OVERRIDE</td><td>on a row</td><td>Opens a modal to set a different band with a structured reason code. Choosing a <em>higher</em> number is a downgrade and shows a warning first.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Inside the override modal</h3>
+  <p>Two dropdowns. The first is the new priority band, 1 to 5. The second is the reason, and it is a
+    fixed list rather than free text — free text is not analysable later, and the whole point of the
+    log is that someone can audit patterns in it.</p>
+  <div class="tw">
+    <table>
+      <thead><tr><th>Reason code</th><th>When you would pick it</th></tr></thead>
+      <tbody>
+        <tr><td class="c">reassessed_at_bedside</td><td>You went and looked; the picture is different from the numbers.</td></tr>
+        <tr><td class="c">clinically_well</td><td>Vitals look alarming, the patient does not.</td></tr>
+        <tr><td class="c">known_baseline</td><td>These readings are normal <em>for this patient</em>.</td></tr>
+        <tr><td class="c">artefact</td><td>A bad probe, a cuff on the wrong arm, a movement artefact.</td></tr>
+        <tr><td class="c">resource_constraint</td><td>Triage under genuine scarcity. Recorded honestly rather than disguised as a clinical judgement.</td></tr>
+        <tr><td class="c">other</td><td>Anything else.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note stop">
+    <div class="tag">Why the downgrade warning exists</div>
+    <p>Lowering someone's priority is the one action no model in this system is permitted to take.
+      Layer 0 can escalate, Layer 1 can escalate, Layer 2 can escalate — none of them can relent.
+      Only a clinician can, and the interface makes that asymmetry visible at the moment it matters
+      rather than burying it in documentation.</p>
+  </div>
+</section>
+
+<!-- ============ walkthroughs ============ -->
+<section id="walk">
+  <h2>Five things to try, in order</h2>
+  <p class="lede">Each one makes a different part of the system show itself. Together they cover every claim the pitch makes.</p>
+
+  <div class="steps">
+    <div class="step"><div>
+      <h4>Watch a quiet patient climb</h4>
+      <p>Pick any row at band 3 or 4 and note its ticket. Leave it for a minute or two of real time —
+        the shift runs at 240&times;, so that is half an hour inside the department. Some patients
+        drift the wrong way and reappear higher up the board carrying an arrow.</p>
+      <div class="then">look for: &uarr; from 3 &nbsp;·&nbsp; "SpO2 falling" &nbsp;·&nbsp; "shock index"</div>
+    </div></div>
+
+    <div class="step"><div>
+      <h4>Find a patient with missing vitals</h4>
+      <p>Look for the orange MEASURE tag, or a row listing <code>missing:</code> fields. That patient
+        did not get a reassuring score by default, and did not get flagged as critical either. They
+        sit at band 2 with an instruction to go and take the reading.</p>
+      <div class="then">this is "unknown is not normal", without flooding the board</div>
+    </div></div>
+
+    <div class="step"><div>
+      <h4>Override someone, then read the log</h4>
+      <p>Click OVERRIDE on any row, choose a <em>higher</em> band number so the warning appears, pick
+        a reason, and confirm. Then open AUDIT and look at the newest entry: your identity, the
+        reason code, the band before and after, and the hash chaining it to everything prior.</p>
+      <div class="then">the chain indicator should still read intact</div>
+    </div></div>
+
+    <div class="step"><div>
+      <h4>Kill the model</h4>
+      <p>From another terminal, take the scorer offline. A banner appears across the top. The board
+        does not blank and does not quietly serve stale scores — the deterministic gate keeps
+        running, and every score drops to LOW confidence because the thing that produced confidence
+        is gone.</p>
+      <div class="then">curl -X POST localhost:8000/api/degraded/1<br>curl -X POST localhost:8000/api/degraded/0 &nbsp;# restore</div>
+    </div></div>
+
+    <div class="step"><div>
+      <h4>Follow one patient all the way through</h4>
+      <p>Pick a ticket and track it in the ticker: <em>arrived</em>, possibly <em>escalated</em>,
+        then <em>taken through</em> when a bay frees, then <em>left</em> once treated. That is the
+        full lifecycle, and it is why the queue drains instead of growing forever.</p>
+      <div class="then">the ticker sits directly under the header, newest first</div>
+    </div></div>
+  </div>
+
+  <div class="note">
+    <div class="tag">For a recording, use the scripted run instead</div>
+    <p>The live board is randomised, so no two runs are identical. <code>make scenarios</code> plays
+      six fixed cases through the same engine — an ambiguous presentation, a paediatric threshold, a
+      zero-history patient, a 3&times; surge, a clinician override, and a total model failure — and
+      prints what happened. Same result every time, so a take can be re-recorded exactly.</p>
+  </div>
+</section>
+
+<!-- ============ simulation ============ -->
+<section id="sim">
+  <h2>What is happening while you watch</h2>
+  <p class="lede">The board is replaying a simulated shift. Knowing the parameters makes the behaviour legible.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Setting</th><th>Value</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>Speed</td><td class="n">240&times;</td><td>One hour of department time per fifteen seconds. A patient arrives roughly every ninety seconds.</td></tr>
+        <tr><td>Shift length</td><td class="n">3 hours</td><td>40 arrivals, then a six-second pause and a fresh shift, so the board is never empty.</td></tr>
+        <tr><td>Treatment bays</td><td class="n">3</td><td>When one frees, the highest-priority waiting patient is taken through.</td></tr>
+        <tr><td>Treatment time</td><td class="n">15–55 min</td><td>Longer for higher acuity: 55 minutes at band 1 down to 15 at band 5.</td></tr>
+        <tr><td>Vitals cadence</td><td class="n">~15 min</td><td>Matched to the real sampling interval in the MIMIC emergency department data.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note warn">
+    <div class="tag">Why the bays matter more than they look</div>
+    <p>An earlier version had no treatment model at all — nobody ever left the queue. Waits grew
+      without bound, the queue-aging rule fired on everyone, and the entire board inflated to band 1.
+      It looked like a broken triage system and was actually a broken simulation. Worth knowing,
+      because it is the kind of thing that is invisible until you watch the screen for a minute.</p>
+  </div>
+</section>
+
+<!-- ============ layers ============ -->
+<section id="why">
+  <h2>Why the rows move</h2>
+  <p class="lede">Four layers, each with a different amount of authority. The separation is the design.</p>
+
+  <div class="layers">
+    <div class="lay"><div class="lid">Layer 0</div><div class="lbody">
+      <h4>Red-flag gate</h4><div class="verdict v-dec">Decides</div>
+      <p>Ten hard rules, each carrying a clinical citation — hypoxaemia, shock, consciousness, airway
+        and so on. Pure logic, no model, no network, so it keeps working when everything else is
+        down. Thresholds are <strong>age-banded</strong>: a systolic of 88 is shock in an adult and
+        entirely normal in a three-year-old.</p>
+    </div></div>
+    <div class="lay"><div class="lid">Layer 1</div><div class="lbody">
+      <h4>Acuity scorer</h4><div class="verdict v-rec">Recommends</div>
+      <p>Gradient-boosted trees over the twelve fields available within five minutes of arrival.
+        Produces the starting band, the reason, and the confidence. It <strong>recommends
+        only</strong> — it can raise a band and never has the last word.</p>
+    </div></div>
+    <div class="lay"><div class="lid">Layer 2</div><div class="lbody">
+      <h4>Dynamic re-ranker</h4><div class="verdict v-ord">Re-orders</div>
+      <p>The reason this is a queue and not a label. It watches <strong>trajectory</strong>, not
+        snapshots: how oxygen saturation, blood pressure and heart rate are moving across the last
+        thirty and sixty minutes, the shock index and its trend, and how long someone has been held.
+        Most of the movement you see comes from here.</p>
+    </div></div>
+    <div class="lay"><div class="lid">Layer 3</div><div class="lbody">
+      <h4>Human authority</h4><div class="verdict v-hum">Decides</div>
+      <p>The nurse accepts, overrides or downgrades — and <strong>only the nurse may
+        downgrade</strong>. Every decision appends to a hash-chained log: each entry embeds the hash
+        of the one before it, so an edit or deletion anywhere breaks the chain and is detectable.</p>
+    </div></div>
+  </div>
+
+  <div class="note">
+    <div class="tag">The invariant, in two lines</div>
+    <p>ATRIA may escalate on its own. It may never de-escalate on its own. That is not a policy in a
+      document — it is a function every priority change passes through, with a test that fails if it
+      is ever violated.</p>
+<pre style="margin-top:12px"><b>if</b> source <b>is</b> HUMAN: <b>return</b> proposed   <i># nurse authority is absolute</i>
+<b>return</b> min(current, proposed)        <i># machines escalate, never relent</i></pre>
+  </div>
+</section>
+
+<!-- ============ api ============ -->
+<section id="api">
+  <h2>Driving it from a terminal</h2>
+  <p class="lede">Everything the interface does is an endpoint, so the demo can be scripted rather than clicked.</p>
+<pre><b>GET  /</b>                              <i>the board</i>
+<b>GET  /api/snapshot</b>                  <i>current queue state as JSON</i>
+<b>GET  /api/audit?limit=60</b>            <i>the audit trail and its integrity</i>
+<b>POST /api/degraded/1</b>                <i>kill the model · 0 restores it</i>
+<b>POST /api/override/{ticket}/{band}?reason_code=…</b>
+                                    <i>band 0 means accept as-is</i>
+<b>WS   /ws</b>                            <i>live snapshots, one per event</i></pre>
+  <p>A quick look at the queue without opening a browser:</p>
+<pre>curl -s localhost:8000/api/snapshot | python3 -m json.tool | head -40</pre>
+</section>
+
+<!-- ============ troubleshooting ============ -->
+<section id="trouble">
+  <h2>If something looks wrong</h2>
+  <div class="tw">
+    <table>
+      <thead><tr><th>What you see</th><th>What it means</th></tr></thead>
+      <tbody>
+        <tr><td>"waiting for the first arrival…" and it stays</td><td>The scorer is still training. Give it ten seconds. If it persists past a minute, check the terminal for a traceback.</td></tr>
+        <tr><td>The board is empty mid-shift</td><td>A shift just ended. There is a six-second pause before the next one begins.</td></tr>
+        <tr><td>Nothing updates</td><td>The websocket dropped. The page retries every 1.2 seconds on its own; a reload forces it.</td></tr>
+        <tr><td>Every row is at band 1</td><td>Should no longer happen — it was the missing treatment model. If it reappears, the bays have stopped draining.</td></tr>
+        <tr><td>Port 8000 already in use</td><td>An older server is still running: <code>pkill -f "uvicorn service.app"</code>, then start again.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============ numbers ============ -->
+<section id="numbers">
+  <h2>What sits behind it</h2>
+  <p class="lede">Measured, not asserted. Every figure is regenerated from the code by <code>make report</code>, so the slides cannot drift away from the system.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>What</th><th>Result</th><th>On what</th></tr></thead>
+      <tbody>
+        <tr><td>Trajectory signal</td><td class="n">32.2% vs 12.2%</td><td>Flagged among patients later admitted, against those discharged home — 159 real MIMIC stays with repeated vitals</td></tr>
+        <tr><td>Lead time</td><td class="n">164 min</td><td>Median warning before the patient's last recorded reading</td></tr>
+        <tr><td>Sensitivity</td><td class="n">95.2%</td><td>Tuned to the American College of Surgeons ≤5% undertriage standard. Specificity is 22.6% — that is the price, and it is reported</td></tr>
+        <tr><td>Confidence guarantee</td><td class="n">≥95%</td><td>Conformal coverage calibrated <em>per class</em>, so the guarantee lands on the critical patients rather than on the average</td></tr>
+        <tr><td>Fairness gap</td><td class="n">18.1% → 0.6%</td><td>Geriatric patients were being undertriaged at 18%; subgroup-conditional calibration closed it</td></tr>
+        <tr><td>Latency</td><td class="n">46 ms</td><td>p95 under a 3× surge, against a 400 ms budget</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note stop">
+    <div class="tag">Two things we found by looking</div>
+    <p><strong>The model had learned that missing vitals are reassuring.</strong> Blanking heart
+      rate, respiratory rate or systolic <em>lowered</em> the predicted risk — a silent undertriage
+      path, in a system that promises the opposite. It was found by auditing rather than assuming,
+      and is now clamped: an unrecorded vital can never score better than an average one.</p>
+    <p><strong>One of our datasets encoded its own answer.</strong> In 143,000 real Iranian emergency
+      records, every single most-urgent patient had zero recorded vitals, against 0.1% of the
+      mid-urgency band — the sickest bypass the triage form entirely. A model given that data would
+      have scored beautifully by learning hospital paperwork instead of physiology. It is excluded
+      from training and kept as the cautionary example.</p>
+  </div>
+</section>
+
+<!-- ============ boundaries ============ -->
+<section id="not">
+  <h2>What it deliberately does not do</h2>
+  <p>The boundary is what makes it deployable, and it is worth being explicit about.</p>
+  <ul>
+    <li><strong>No diagnosis.</strong> ATRIA never suggests what is wrong with a patient.</li>
+    <li><strong>No treatment recommendations.</strong> It changes who is seen next, not what happens when they are.</li>
+    <li><strong>No autonomous downgrade.</strong> Every reduction in urgency is a human decision, recorded with a reason.</li>
+    <li><strong>No silent failure.</strong> Missing data, low confidence and degraded mode are shown on the face of the board rather than hidden behind a number.</li>
+  </ul>
+
+  <div class="note">
+    <div class="tag">On the patients you are watching</div>
+    <p>Everyone on the demo board is <strong>synthetic</strong> — generated from distributions fitted
+      to 143,000 real Iranian emergency records and validated against real vital-sign sequences from
+      Boston. The performance figures come from real patients; the people on screen do not, which
+      keeps the demo reproducible and free of any data-licence question.</p>
+  </div>
+</section>
+
+<div class="foot">
+  ATRIA · a live queue, not a label<br>
+  Accenture Innovation Challenge 2026, Round 2, Track 2 — PatientTriage.ai<br>
+  Team Digital Ninja — Pushpender, Shagun, Atit · IIT Kanpur
+</div>
+
+</div>
+
+</body>
+</html>

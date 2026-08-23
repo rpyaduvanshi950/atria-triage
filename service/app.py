@@ -18,6 +18,7 @@ from service.clock import ReplayClock, build_events
 from service.queue import QueueEngine
 
 DASHBOARD = Path("dashboard/index.html")
+GUIDE = Path("dashboard/guide.html")
 
 app = FastAPI(title="ATRIA")
 engine = QueueEngine()
@@ -30,12 +31,12 @@ async def startup() -> None:
     asyncio.create_task(_replay())
 
 
-async def _replay(speed: float = 900.0, surge: float = 1.0) -> None:
+async def _replay(speed: float = 240.0, surge: float = 1.0) -> None:
     """Replay a synthetic shift on loop so the board is never empty."""
     while True:
         engine.patients.clear()
         engine.events_log.clear()
-        ds = generate(26, seed=int(asyncio.get_event_loop().time()) % 1000)
+        ds = generate(40, seed=int(asyncio.get_event_loop().time()) % 1000, hours=3.0)
         clock = ReplayClock(build_events(ds, surge=surge), speed=speed)
         async for event in clock.stream():
             if event.kind == "arrival":
@@ -60,6 +61,12 @@ async def _broadcast() -> None:
 @app.get("/")
 async def index() -> FileResponse:
     return FileResponse(DASHBOARD)
+
+
+@app.get("/guide")
+async def guide() -> FileResponse:
+    """The full operating guide — how to run it, what to click, what it all means."""
+    return FileResponse(GUIDE)
 
 
 @app.get("/api/snapshot")
