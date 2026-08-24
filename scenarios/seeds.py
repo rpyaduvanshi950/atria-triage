@@ -127,6 +127,28 @@ def lights_out() -> Dataset:
     )], "lights_out")
 
 
+# --- 07 the ambiguous one ---------------------------------------------------
+
+def ambiguous() -> Dataset:
+    """
+    Hypothermia and trauma together — the case clinical review raised.
+
+    Two gates are closing at once and the treatments conflict: a vasopressor for
+    the shock constricts already-vasoconstricted peripheral vessels and drives
+    necrosis. The system should be *certain* this patient is critical and
+    *honest* that it cannot say which pathway is killing them.
+    """
+    return _dataset([_patient(
+        901007, age=41, gender="M", complaint="found collapsed outdoors", acuity=2,
+        transport="ambulance",
+        vitals=dict(heartrate=132, resprate=26, o2sat=92, sbp=82, dbp=60,
+                    temperature=92.5, pain=5),
+        trajectory=[
+            dict(heartrate=138, resprate=28, o2sat=90, sbp=78, dbp=56, temperature=92.0),
+            dict(heartrate=141, resprate=30, o2sat=89, sbp=74, dbp=52, temperature=91.6),
+        ])], "ambiguous")
+
+
 @dataclass(frozen=True)
 class Scenario:
     number: str
@@ -148,4 +170,7 @@ ALL = [
              "clinician override; what the audit log records"),
     Scenario("06", "Lights out", lights_out,
              "degraded mode; Layer 0 gates with no model"),
+    Scenario("07", "The ambiguous one", ambiguous,
+             "RF12 abstention; diagnostic uncertainty separate from triage uncertainty; "
+             "competing pathologies with conflicting treatment"),
 ]

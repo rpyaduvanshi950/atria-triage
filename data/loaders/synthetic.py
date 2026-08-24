@@ -48,6 +48,18 @@ COMPLAINTS = [
 ]
 
 
+def surge_missing_rate(base: float, surge: float) -> float:
+    """
+    How much data quality degrades under load.
+
+    A department at three times volume does not record three times fewer vitals,
+    but it does record meaningfully fewer: the clerking is rushed, the machine is
+    in use, the nurse is called away. Sub-linear and capped, because even a
+    collapsing department still takes a blood pressure sometimes.
+    """
+    return float(min(0.55, base * (1.0 + 0.45 * (max(1.0, surge) - 1.0))))
+
+
 def _band(age: float) -> dict:
     for lo, hi, vals in AGE_BANDS:
         if lo <= age < hi:
@@ -84,8 +96,15 @@ def generate(
     deteriorating_share: float = 0.20,
     crashing_share: float = 0.06,
     hours: float = 4.0,
+    missing_rate: float = 0.18,
 ) -> Dataset:
-    """Generate `n` arrivals over `hours`, each with a vitals trajectory."""
+    """
+    Generate `n` arrivals over `hours`, each with a vitals trajectory.
+
+    `missing_rate` is per-field. Callers raise it under surge: less time per
+    patient means more blank fields, and that is precisely when a model is most
+    tempted to read missingness as a signal. See `surge_missing_rate`.
+    """
     rng = np.random.default_rng(seed)
     priors = priors or Priors.fit()
 
@@ -123,7 +142,7 @@ def generate(
         temp = float(rng.normal(98.6, 1.4))
 
         # real triage forms are incomplete; mirror that, but never for the gate
-        miss = rng.random(6) < 0.18
+        miss = rng.random(6) < missing_rate
 
         triage_rows.append(dict(
             subject_id=stay_id, stay_id=stay_id,
@@ -171,7 +190,7 @@ def generate(
         triage=conform(pd.DataFrame(triage_rows), TRIAGE_COLS),
         vitalsign=conform(pd.DataFrame(vital_rows), VITALSIGN_COLS),
         extensions={"trajectory": dict(zip([s["stay_id"] for s in stays], traj)),
-                    "priors": priors.source},
+                    "priors": priors.source, "missing_rate": missing_rate},
         trainable=True,
     )
     return ds

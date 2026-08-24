@@ -10,7 +10,34 @@
 #   absent      — witnessed events (seizure, haemorrhage). Absence of an
 #                 observation is not evidence of the event, and imputing these to
 #                 "true" would fire every rule on every patient with a blank form.
-version: "0.1.0"
+version: "0.2.0"
+
+# Meta-rules. These do not test a vital against a threshold — they test whether
+# the system is entitled to answer at all. Implemented in engine.py because they
+# reason over the whole record rather than one field, and listed here so the rule
+# table remains the single auditable statement of what the gate does.
+meta_rules:
+  - id: RF11
+    name: Insufficient data to triage
+    trigger: fewer than 3 of the monitored vitals are recorded
+    action: hard stop — no score is produced, the patient is routed to a clinician
+    rationale: >
+      Below a floor of observations any score is an assertion about a patient
+      nobody has examined. Overtriaging on absent data looks useful and is not:
+      it consumes the attention of a department that has none to spare, and it
+      teaches staff that the board can be ignored.
+    citation: "Clinical review, Round 2 design consultation."
+
+  - id: RF12
+    name: Ambiguous presentation — cannot classify
+    trigger: two or more atria mortis pathways are engaged with near-equal severity
+    action: abstain from ranking within band; escalate for urgent clinician review
+    rationale: >
+      Diagnostic uncertainty is not triage uncertainty. A patient may be
+      unambiguously critical while nobody can say whether it is the heart, the
+      lungs or the brain. That patient needs a doctor now, not a better score,
+      and the system should say so rather than manufacture a confident answer.
+    citation: "Clinical review, Round 2 design consultation."
 
 worst_case:
   gcs: 3

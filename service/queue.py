@@ -14,6 +14,7 @@ import pandas as pd
 
 from contracts.schema import VITAL_FIELDS
 from layer0.engine import gate
+from layer1 import pathways
 
 # What the contract can actually supply. GCS and the witnessed-event flags
 # (seizure, airway, haemorrhage...) are not columns in any of our sources, so
@@ -28,6 +29,22 @@ TREATMENT_SLOTS = 3
 
 # Roughly how long treatment takes, by the band they were taken at (minutes).
 TREATMENT_MINUTES = {1: 55, 2: 45, 3: 35, 4: 25, 5: 15}
+
+# Parallel lanes. One queue works until it does not: as volume grows, the answer
+# is not a longer line but more of them, sorted by what each can absorb — the way
+# an airport boards by group rather than making everyone queue once.
+LANES = {
+    "RESUS": (1, 1),        # band 1 only — its own lane, never behind anyone
+    "ACUTE": (2, 3),
+    "FAST TRACK": (4, 5),
+}
+
+
+def lane_for(band: int) -> str:
+    for name, (lo, hi) in LANES.items():
+        if lo <= band <= hi:
+            return name
+    return "FAST TRACK"
 from layer1.model import AcuityScorer
 from layer2.ratchet import Source, apply
 from layer3.audit import AuditLog
@@ -58,6 +75,12 @@ class Patient:
     seen_at: pd.Timestamp | None = None
     leaves_at: pd.Timestamp | None = None
     seen_at_band: int | None = None
+    #: RF11/RF12 — the system declined to rank this patient
+    abstained: bool = False
+    abstain_reason: str = ""
+    diagnostic_confidence: str = "HIGH"
+    pathway: str | None = None
+    conflicts: tuple[str, ...] = ()
 
     def waited(self, now: pd.Timestamp) -> float:
         return max(0.0, (now - self.arrived).total_seconds() / 60)
@@ -67,6 +90,10 @@ class Patient:
             stay_id=self.stay_id, ticket=self.ticket,
             band=self.band, band_before=self.band_before,
             state="IN TREATMENT" if self.seen_at is not None else self.state,
+            lane=lane_for(self.band), abstained=self.abstained,
+            abstain_reason=self.abstain_reason,
+            diagnostic_confidence=self.diagnostic_confidence,
+            pathway=self.pathway, conflicts=list(self.conflicts),
             red_flag=self.red_flag,
             needs_measurement=self.needs_measurement, confidence=self.confidence,
             reasons=list(self.reasons), missing=list(self.missing),
@@ -111,9 +138,16 @@ class QueueEngine:
 
         vitals = {k: _num(p.get(k)) for k in
                   ("heartrate", "resprate", "o2sat", "sbp", "dbp", "temperature")}
+        vitals["shock_index"] = _si(vitals)
+        vitals["pulse_pressure"] = _pp(vitals)
+
+        # the three gates, computed before Layer 0 so RF12 can use the spread
+        profile = pathways.assess({**vitals, "age": patient.age})
 
         # Layer 0 first, always. No model can suppress what it fires.
-        g = gate({**vitals, "age": patient.age}, AVAILABLE_FIELDS)
+        g = gate({**vitals, "age": patient.age,
+                  "_pathway_ambiguity": profile.spread,
+                  "_pathway_severity": profile.severity}, AVAILABLE_FIELDS)
         band = 5
         if g.is_red:
             band = apply(band, g.priority, Source.RULE)
@@ -123,6 +157,28 @@ class QueueEngine:
             # not an emergency, but not dismissable either: measure the vital
             band = apply(band, g.priority, Source.RULE)
             patient.needs_measurement = g.explain()
+
+        # RF11 — too little to go on. No score is produced at all: the patient is
+        # handed to a clinician rather than given a number nobody should trust.
+        if g.hard_stop:
+            patient.band = apply(band, g.priority, Source.RULE)
+            patient.abstained = True
+            patient.abstain_reason = g.explain()
+            patient.state = "AWAITING"
+            patient.confidence = "LOW"
+            patient.reasons = ("no score produced — clinician assessment required",)
+            self._next_ticket += 1
+            self.patients[e.stay_id] = patient
+            self._tick("arrived", patient, "insufficient data — routed to clinician")
+            self.audit.append("abstain", patient.stay_id, self.now, rule="RF11",
+                              observed_fields=g.observed_fields, reason=g.explain())
+            self._advance_service()
+            self.latencies.append((time.perf_counter() - t0) * 1000)
+            return
+
+        if g.ambiguous:
+            patient.abstained = True
+            patient.abstain_reason = g.explain()
 
         # Layer 1 recommends
         if self.scorer is not None and not self.degraded:
@@ -137,14 +193,18 @@ class QueueEngine:
                                           ("heartrate", "resprate", "o2sat", "sbp", "dbp", "temperature"))
             s = self.scorer.score_one(row)
             band = apply(band, s.band, Source.MODEL)
-            patient.risk, patient.confidence = s.risk, s.confidence
+            patient.risk = s.risk
+            patient.confidence = s.triage_confidence
+            patient.diagnostic_confidence = s.diagnostic_confidence
             patient.reasons, patient.missing = s.reasons, s.missing
+            patient.pathway = s.pathways.dominant if s.pathways else None
+            patient.conflicts = s.conflicts
         elif self.degraded:
             patient.confidence = "LOW"
             patient.reasons = ("degraded mode — Layer 0 only",)
 
         patient.band = band
-        if patient.red_flag or band == 1:
+        if patient.red_flag or band == 1 or patient.abstained:
             patient.state = "AWAITING"
         self._next_ticket += 1
         self.patients[e.stay_id] = patient
@@ -250,13 +310,17 @@ class QueueEngine:
                 + [p.as_dict(now) for p in self.in_treatment.values()])
         rows.sort(key=lambda r: (r["state"] == "IN TREATMENT",
                                  r["state"] != "AWAITING", r["band"], -r["waited"]))
+        lanes = {name: sum(1 for r in rows
+                           if r["lane"] == name and r["state"] != "IN TREATMENT")
+                 for name in LANES}
         lat = sorted(self.latencies)
         return dict(
             now=str(now), degraded=self.degraded, rows=rows,
             ticker=list(reversed(self.ticker)),
             in_treatment=len(self.in_treatment), seen=len(self.seen),
             slots=self.slots,
-            waiting=len(self.patients),
+            waiting=len(self.patients), lanes=lanes,
+            abstained=sum(1 for r in rows if r.get("abstained")),
             escalated=sum(1 for r in rows if r["state"] == "ESCALATED"),
             p95_ms=round(lat[int(len(lat) * 0.95)], 1) if lat else None,
             escalations=self.events_log[-10:],

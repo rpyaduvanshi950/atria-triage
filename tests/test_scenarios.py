@@ -12,9 +12,24 @@ def scorer():
     return AcuityScorer().fit(generate(2000, seed=3))
 
 
-def test_all_six_scenarios_are_defined():
-    assert len(seeds.ALL) == 6
-    assert [s.number for s in seeds.ALL] == ["01", "02", "03", "04", "05", "06"]
+def test_all_scenarios_are_defined():
+    assert len(seeds.ALL) == 7
+    assert [s.number for s in seeds.ALL] == ["01", "02", "03", "04", "05", "06", "07"]
+
+
+def test_07_ambiguous_case_abstains_but_stays_confident_about_urgency(scorer):
+    """
+    The case clinical review raised: certain it is critical, honest that it
+    cannot say which gate is closing, and explicit that the treatments conflict.
+    """
+    q = play(seeds.ALL[6], scorer)
+    row = q.snapshot()["rows"][0]
+    assert row["band"] == 1
+    assert row["lane"] == "RESUS"
+    assert row["abstained"], "should decline to classify"
+    assert row["confidence"] == "HIGH", "urgency is not in doubt"
+    assert row["diagnostic_confidence"] == "LOW", "the cause is"
+    assert row["conflicts"], "the vasopressor conflict must be surfaced"
 
 
 def test_01_quiet_patient_escalates_from_trajectory(scorer):

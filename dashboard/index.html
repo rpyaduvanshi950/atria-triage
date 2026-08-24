@@ -35,6 +35,17 @@
   .row.ESCALATED{border-left-color:var(--signal)}
   .row.AWAITING{border-left-color:var(--accent)}
   .row[class*="TREATMENT"]{opacity:.55;border-left-color:var(--ink-3)}
+  .row.abstain{border-left-color:var(--critical);background:linear-gradient(90deg,
+      rgba(229,118,106,.07),transparent 220px)}
+  .lane{font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;padding:1px 6px;
+        border:1px solid var(--rule);color:var(--ink-3);margin-right:7px}
+  .lane.RESUS{border-color:var(--critical);color:var(--critical)}
+  .lane.ACUTE{border-color:var(--signal);color:var(--signal)}
+  .abst{margin-top:7px;padding:7px 10px;border-left:2px solid var(--critical);
+        background:rgba(229,118,106,.08);font-family:var(--mono);font-size:11px;
+        color:var(--critical);line-height:1.5}
+  .conf2{display:flex;gap:5px}
+  #lanes b{color:var(--ink-2)!important}
   .row.red{border-left-color:var(--critical)}
   .band{font-family:var(--mono);font-size:26px;line-height:1;font-variant-numeric:tabular-nums}
   .band small{display:block;font-size:10px;color:var(--signal);margin-top:4px;letter-spacing:.04em}
@@ -133,6 +144,8 @@
     <span><b id="intreat">0</b> in treatment</span>
     <span><b id="seen">0</b> seen</span>
     <span><b id="escalated">0</b> escalated</span>
+    <span><b id="abstained">0</b> abstained</span>
+    <span id="lanes"></span>
     <span>p95 <b id="p95">–</b> ms</span>
     <span class="live"><span class="dot"></span><span id="clock">–</span></span>
     <button onclick="toggleAudit()" style="margin-left:4px">AUDIT</button>
@@ -186,6 +199,14 @@
       coverage guarantee. <b>No score is ever shown without one.</b></dd>
     <dt>missing: …</dt><dd>Vitals never recorded. A score built on incomplete data says so on
       its face.</dd>
+    <dt>TRIAGE / DIAGNOSIS</dt><dd>Two separate confidences. <b>Triage</b> is how sure we are
+      <i>how urgent</i>; <b>diagnosis</b> is how sure we are <i>what is wrong</i>. A patient can be
+      unambiguously critical and diagnostically opaque at the same time — that patient needs a
+      doctor now, not a better score.</dd>
+    <dt>RESUS / ACUTE / FAST TRACK</dt><dd>Parallel lanes. One queue works until it does not; at
+      volume the answer is more lanes, not a longer line. Band 1 never queues behind anyone.</dd>
+    <dt>ABSTAIN band</dt><dd>The system declined to score. Either too few vitals to answer at all
+      (RF11), or the picture fits more than one pathway equally (RF12). Routed to a clinician.</dd>
   </dl>
 
   <h3>Row states</h3>
@@ -296,6 +317,9 @@ function render(s){
   document.getElementById('escalated').textContent = s.escalated;
   document.getElementById('intreat').textContent = `${s.in_treatment ?? 0}/${s.slots ?? 0}`;
   document.getElementById('seen').textContent = s.seen ?? 0;
+  document.getElementById('abstained').textContent = s.abstained ?? 0;
+  document.getElementById('lanes').innerHTML = Object.entries(s.lanes||{})
+    .map(([k,v]) => `${k} <b>${v}</b>`).join(' &nbsp; ');
   const verb = {arrived:'arrived', seen:'taken through', left:'left', escalated:'escalated'};
   document.getElementById('tick').innerHTML = (s.ticker||[]).map(t =>
     `<span class="${t.kind}">${t.at} <b>${t.ticket} ${verb[t.kind]||t.kind}</b> · ${t.detail}</span>`
@@ -307,13 +331,16 @@ function render(s){
   if(!s.rows.length){ board.innerHTML = '<div class="empty">waiting for the first arrival…</div>'; return; }
 
   board.innerHTML = s.rows.map(r => {
-    const cls = ['row', r.state.replace(' ','-'), r.red_flag ? 'red' : ''].join(' ');
+    const cls = ['row', r.state.replace(' ','-'), r.red_flag ? 'red' : '',
+                 r.abstained ? 'abstain' : ''].join(' ');
     const from = r.band_before ? `<small>&uarr; from ${r.band_before}</small>` : '';
     const why  = r.red_flag || (r.reasons||[]).join(' · ') || r.needs_measurement || '—';
     const tags = [
       r.red_flag ? '<span class="tag red">RED FLAG</span>' : '',
       r.needs_measurement && !r.red_flag ? '<span class="tag measure">MEASURE</span>' : '',
-      `<span class="tag conf-${r.confidence}">${r.confidence}</span>`,
+      `<span class="tag conf-${r.confidence}">TRIAGE ${r.confidence}</span>`,
+      `<span class="tag conf-${r.diagnostic_confidence||'HIGH'}">DIAGNOSIS ${r.diagnostic_confidence||'HIGH'}</span>`,
+      r.pathway ? `<span class="tag">${r.pathway}</span>` : '',
       (r.missing||[]).length ? `<span class="tag">missing: ${r.missing.join(', ')}</span>` : '',
       `<span class="tag">${r.readings} readings</span>`
     ].join('');
@@ -329,9 +356,11 @@ function render(s){
     return `<div class="${cls}">
       <div class="band">${r.band}${from}</div>
       <div>
-        <div class="who">${tkt}${r.complaint}<span>${age}</span></div>
+        <div class="who"><span class="lane ${r.lane||''}">${r.lane||''}</span>${tkt}${r.complaint}<span>${age}</span></div>
         <div class="why">${why}</div>
         <div class="tags">${tags}</div>
+        ${r.abstained ? `<div class="abst">${r.abstain_reason||'system abstained'}</div>` : ''}
+        ${(r.conflicts||[]).map(c=>`<div class="abst">TREATMENT CONFLICT · ${c}</div>`).join('')}
         ${acts}
       </div>
       <div class="meta">waited ${r.waited}m${over}</div>

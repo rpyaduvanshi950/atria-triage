@@ -19,3 +19,6 @@ __pycache__/
 .venv/
 .pytest_cache/
 .env
+
+# personal notes / transcripts — not part of the deliverable
+test.md

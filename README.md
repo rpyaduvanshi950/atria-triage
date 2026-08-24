@@ -1,4 +1,5 @@
-# ATRIA
+
+ATRIA
 
 A live queue, not a label.
 
@@ -19,7 +20,7 @@ make setup          # one-off: creates .venv and installs dependencies
 make demo           # starts the live board
 ```
 
-Then open **<http://127.0.0.1:8000>**. Ctrl-C to stop.
+Then open **[http://127.0.0.1:8000](http://127.0.0.1:8000)**. Ctrl-C to stop.
 
 **Give it about ten seconds.** On startup it trains the Layer 1 scorer on 3,000
 synthetic patients, so the board reads *"waiting for the first arrival…"* until
@@ -28,11 +29,11 @@ The shift loops, so the board is never empty while you are recording.
 
 ### Things to try while it is running
 
-| | |
-|---|---|
-| **AUDIT** button, top right | The hash-chained trail — every entry with its hash and predecessor, and a live chain-integrity indicator |
-| **OVERRIDE** on any row | Pick a *higher* band number and the downgrade warning appears. That is the move no model is permitted to make; it writes to the audit log with a structured reason code |
-| Kill the model service | `curl -X POST http://127.0.0.1:8000/api/degraded/1` — the banner appears and Layer 0 keeps gating. `/0` restores it |
+|                                   |                                                                                                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **AUDIT** button, top right | The hash-chained trail — every entry with its hash and predecessor, and a live chain-integrity indicator                                                                |
+| **OVERRIDE** on any row     | Pick a*higher* band number and the downgrade warning appears. That is the move no model is permitted to make; it writes to the audit log with a structured reason code |
+| Kill the model service            | `curl -X POST http://127.0.0.1:8000/api/degraded/1` — the banner appears and Layer 0 keeps gating. `/0` restores it                                                 |
 
 ### For the video, use the scripted run instead
 
@@ -47,8 +48,8 @@ the live board; `make scenarios` is what you narrate against.
 ### Everything else
 
 ```bash
-make test           # 92 tests (skips the slow measurement runs)
-make test-all       # all 94, including figure and report generation
+make test           # 124 tests (skips the slow measurement runs)
+make test-all       # all 126, including figure and report generation
 make status         # which data sources are loadable right now
 make eval           # latency, cross-site, Layer 2 lead time
 make fairness       # subgroup audit and mitigation
@@ -71,30 +72,31 @@ A working end-to-end prototype, not a notebook.
   Zero dependencies: no React, no build step, no CDN.
 - **A calibrated synthetic generator** fitted to real Isfahan priors, supplying
   the paediatric, surge and deterioration cases no open snapshot dataset carries.
-- **Six scripted scenarios** covering every minimum expectation in the brief.
+- **Seven scripted scenarios** covering every minimum expectation in the brief,
+  plus the ambiguous multi-pathway case.
 - **An evaluation suite** — fairness, latency, cross-site, Layer 2 lead time —
   that regenerates the deck's figures and numbers on demand.
-- **94 tests**, including one per red-flag rule and a proof that no machine
-  source can suppress a red flag.
+- **126 tests**, including one per red-flag rule, a proof that no machine source
+  can suppress a red flag, and coverage of every abstention path.
 
 ## Layers
 
 | | | |
-|---|---|---|
+| ----------------- | ----------- | -------------------------------------------------------------------- |
 | **Layer 0** | `layer0/` | Deterministic red-flag gate — 10 cited rules, runs offline. Decides |
-| **Layer 1** | `layer1/` | Acuity scorer + Mondrian conformal confidence. Recommends |
+| **Layer 1** | `layer1/` | Acuity scorer, conformal confidence, three-pathway model. Recommends |
 | **Layer 2** | `layer2/` | Dynamic re-ranker from vital trajectories. Re-orders |
 | **Layer 3** | `layer3/` | Human authority + hash-chained audit log. Decides |
 
 ## What has been measured
 
-| | |
-|---|---|
-| Layer 2 on 159 real MIMIC trajectories | 32.2% of admitted flagged vs 12.2% of discharged, median 164 min lead |
-| Conformal coverage | >=95% per class, calibrated on held-out data |
-| Latency, p95 | 41 ms at 3x surge, against a 400 ms budget |
-| Missingness audit | HR, RR and SBP absences were read as *reassuring*; now clamped |
-| Fairness | geriatric undertriage 18.1% -> gap closed to 0.6% by subgroup-conditional calibration |
+|                                        |                                                                                       |
+| -------------------------------------- | ------------------------------------------------------------------------------------- |
+| Layer 2 on 159 real MIMIC trajectories | 32.2% of admitted flagged vs 12.2% of discharged, median 164 min lead                 |
+| Conformal coverage                     | >=95% per class, calibrated on held-out data                                          |
+| Latency, p95                           | 41 ms at 3x surge, against a 400 ms budget                                            |
+| Missingness audit                      | HR, RR and SBP absences were read as*reassuring*; now clamped                       |
+| Fairness                               | geriatric undertriage 18.1% -> gap closed to 0.6% by subgroup-conditional calibration |
 
 Every figure above is produced by `make report`, which writes
 [`docs/results.md`](docs/results.md) and the deck figures. Nothing is typed by
@@ -109,12 +111,12 @@ Three open datasets, no credentialing. See **`data/README.md`** for provenance,
 licences and attribution duties — attribution is a licence condition for all
 three, not a courtesy.
 
-| Source | Role | Ready |
-|---|---|---|
-| Yale ED (560,486 visits) | Trains Layer 1 | needs one R extraction step |
-| MIMIC-IV-ED Demo (222 stays) | Layer 2 trajectories, schema truth | yes |
-| Isfahan ED (143,140 stays) | Generator priors + leakage case study | yes, **not trainable** |
-| Synthetic | Trajectories, paediatrics, surge | generated, fitted to Isfahan priors |
+| Source                       | Role                                  | Ready                               |
+| ---------------------------- | ------------------------------------- | ----------------------------------- |
+| Yale ED (560,486 visits)     | Trains Layer 1                        | needs one R extraction step         |
+| MIMIC-IV-ED Demo (222 stays) | Layer 2 trajectories, schema truth    | yes                                 |
+| Isfahan ED (143,140 stays)   | Generator priors + leakage case study | yes,**not trainable**         |
+| Synthetic                    | Trajectories, paediatrics, surge      | generated, fitted to Isfahan priors |
 
 Isfahan is deliberately marked non-trainable: its missingness encodes the triage
 decision itself. `Dataset.require_trainable()` raises `LeakageError` if anyone
@@ -129,11 +131,46 @@ layer0..3/    the four layers
 service/      replay clock, queue engine, FastAPI + websocket
 dashboard/    the nurse board — design decisions in NOTES.md
 eval/         fairness, cross_site, lead_time, latency, figures, report
-scenarios/    the six seeded demo scenarios + runner
+scenarios/    the seven seeded demo scenarios + runner
 tests/        94 tests — one per red-flag rule, the invariant, the audit chain
 docs/         business proposal, measured results, figures, deck changes
 Makefile      every command above
 ```
+
+## The three atria mortis
+
+Feature selection follows from a clinical model rather than being a bag of vitals.
+Every acute presentation kills through one of three gates — the lungs, the heart,
+the brain — and each is monitored by four or five parameters weighted by how
+*specific* they are to that gate.
+
+This buys two things a single acuity score cannot express:
+
+**Diagnostic uncertainty, separate from triage uncertainty.** Not knowing *what
+is wrong* is a different failure from not knowing *how urgent*. A hypothermic
+trauma patient scores triage confidence HIGH and diagnostic confidence LOW — we
+are certain they are critical and honest that we cannot say which gate is
+closing. That patient needs a doctor now, not a better score.
+
+**Competing pathologies.** Two conditions are rarely additive. Hypothermia plus
+shock is flagged as a *treatment conflict*: a vasopressor constricts already
+vasoconstricted vessels and drives necrosis. ATRIA does not choose the drug — it
+says the two are both true and they conflict, and routes to a human.
+
+## When the system refuses to answer
+
+| | |
+|---|---|
+| **RF11** hard stop | Fewer than 3 of the monitored vitals recorded. No score is produced at all — a chief complaint alone is never enough, because you cannot triage a sentence |
+| **RF12** abstain | Two or more pathways engaged with near-equal severity. The system says it cannot classify rather than manufacturing a confident answer |
+
+Both route to a clinician and both are written to the audit log. Neither is a
+low-acuity finding: an unknown patient goes ahead of everyone already cleared.
+
+Under a 3x surge the generator degrades data quality too — less time per patient
+means more blank fields — which is exactly when a model is most tempted to read
+missingness as signal. Abstentions rise accordingly, and that is the system
+working, not failing.
 
 ## Layer 0's three outcomes
 
@@ -167,16 +204,16 @@ Thresholds are now age-banded on PALS.
 
 ## Documents
 
-| | |
-|---|---|
+|                                                           |                                                                          |
+| --------------------------------------------------------- | ------------------------------------------------------------------------ |
 | [`docs/business-proposal.md`](docs/business-proposal.md) | The Round 2 proposal — framing, design, users, evidence, roadmap, risks |
-| [`docs/results.md`](docs/results.md) | Every measured number, regenerated by `make report` |
-| [`docs/figures/`](docs/figures) | Deck figures, palette validated for colour-vision deficiency |
-| [`docs/deck-changes.md`](docs/deck-changes.md) | What to fix and add in the pitch deck |
-| [`dashboard/NOTES.md`](dashboard/NOTES.md) | Nurse board design decisions |
+| [`docs/results.md`](docs/results.md)                     | Every measured number, regenerated by`make report`                     |
+| [`docs/figures/`](docs/figures)                          | Deck figures, palette validated for colour-vision deficiency             |
+| [`docs/deck-changes.md`](docs/deck-changes.md)           | What to fix and add in the pitch deck                                    |
+| [`dashboard/NOTES.md`](dashboard/NOTES.md)               | Nurse board design decisions                                             |
 
 ## Plan
 
 The seven-day build plan, with measured dataset profiles and the research behind
 each decision:
-<https://claude.ai/code/artifact/896e08b0-8e09-41c8-bc61-9ea2acf4e87d>
+[https://claude.ai/code/artifact/896e08b0-8e09-41c8-bc61-9ea2acf4e87d](https://claude.ai/code/artifact/896e08b0-8e09-41c8-bc61-9ea2acf4e87d)

@@ -17,8 +17,9 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 
 from contracts.schema import Dataset
-from layer1 import features
+from layer1 import features, interactions, pathways
 from layer1.conformal import MondrianConformal, PredictionSet
+from layer1.pathways import PathwayProfile
 
 
 # Worst plausible values, shared with the Layer 0 rule table so the two layers
@@ -42,17 +43,36 @@ class Scored:
 
     risk: float
     band: int                 # 1 (most urgent) .. 5
-    confidence: str           # HIGH | MODERATE | LOW
+    #: How sure we are *how urgent* this patient is. From the conformal set.
+    triage_confidence: str    # HIGH | MODERATE | LOW
+    #: How sure we are *what is wrong*. From the spread across the three gates.
+    #: A patient can be unambiguously critical and diagnostically opaque at once,
+    #: and collapsing these into one number hides exactly that patient.
+    diagnostic_confidence: str
     reasons: tuple[str, ...]
     missing: tuple[str, ...]
     #: the conformal prediction set. There is no path to a risk without one.
     prediction_set: PredictionSet | None = None
+    pathways: PathwayProfile | None = None
+    conflicts: tuple[str, ...] = ()
+    amplified_by: float = 1.0
+
+    @property
+    def confidence(self) -> str:
+        """The worse of the two, for anywhere that can only show one."""
+        order = {"LOW": 0, "MODERATE": 1, "HIGH": 2}
+        return min(self.triage_confidence, self.diagnostic_confidence, key=order.get)
 
     def as_dict(self) -> dict:
         return dict(risk=round(self.risk, 4), band=self.band,
-                    confidence=self.confidence, reasons=list(self.reasons),
-                    missing=list(self.missing),
-                    prediction_set=self.prediction_set.as_dict() if self.prediction_set else None)
+                    confidence=self.confidence,
+                    triage_confidence=self.triage_confidence,
+                    diagnostic_confidence=self.diagnostic_confidence,
+                    reasons=list(self.reasons), missing=list(self.missing),
+                    prediction_set=self.prediction_set.as_dict() if self.prediction_set else None,
+                    pathways=self.pathways.as_dict() if self.pathways else None,
+                    conflicts=list(self.conflicts),
+                    amplified_by=round(self.amplified_by, 2))
 
 
 class AcuityScorer:
@@ -175,14 +195,55 @@ class AcuityScorer:
         pset = None
         if self.conformal is not None:
             pset = self.conformal.predict(risk, group=str(self._groups(X)[0]))
+
+        # the three gates, and whether anything is compounding or conflicting
+        profile = pathways.assess(row)
+        found = interactions.detect(row)
+        amplify = interactions.amplification(row)
+
+        band = self.band_for(risk)
+        # A closing gate outranks a low statistical risk. The model is trained on
+        # a coarse admission proxy; the pathway model encodes physiology, and
+        # where they disagree we take the more urgent of the two.
+        if profile.severity >= 0.75:
+            band = min(band, 2)
+        if profile.severity * amplify >= 1.0 and profile.severity >= 0.6:
+            band = min(band, 2)
+
+        reasons = list(self.reasons_for(row, risk))
+        if profile.dominant and profile.severity >= 0.3:
+            reasons.insert(0, profile.explain())
+        for i in found:
+            if i.kind == "conflict":
+                reasons.insert(0, i.describe())
+
         return Scored(
             risk=risk,
-            band=self.band_for(risk),
-            confidence=self.confidence_for(risk, len(missing), pset),
-            reasons=self.reasons_for(row, risk),
+            band=band,
+            triage_confidence=self.confidence_for(risk, len(missing), pset),
+            diagnostic_confidence=self.diagnostic_confidence_for(profile),
+            reasons=tuple(reasons[:3]),
             missing=missing,
             prediction_set=pset,
+            pathways=profile,
+            conflicts=tuple(i.describe() for i in found if i.kind == "conflict"),
+            amplified_by=amplify,
         )
+
+    @staticmethod
+    def diagnostic_confidence_for(profile: PathwayProfile) -> str:
+        """
+        How sure we are what is wrong — entirely separate from how sure we are
+        how urgent it is. Nothing engaged is not the same as ambiguous: a well
+        patient is diagnostically easy.
+        """
+        if profile.severity < 0.3:
+            return "HIGH"
+        if profile.spread >= 0.75:
+            return "LOW"
+        if profile.spread >= 0.5:
+            return "MODERATE"
+        return "HIGH"
 
     def _clamp(self, X: pd.DataFrame, risk: float) -> float:
         """

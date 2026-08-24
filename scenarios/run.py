@@ -37,9 +37,15 @@ def main() -> None:
         for r in snap["rows"][: 6 if s.number == "04" else 3]:
             arrow = f" (from {r['band_before']})" if r["band_before"] else ""
             why = r["red_flag"] or "; ".join(r["reasons"]) or r["needs_measurement"] or "—"
-            print(f"  band {r['band']}{arrow:<9} {r['state']:<10} {r['confidence']:<9} {why[:52]}")
+            print(f"  {r['lane']:<11} band {r['band']}{arrow:<9} {r['state']:<10} "
+                  f"triage={r['confidence']:<9} dx={r['diagnostic_confidence']:<9}")
+            print(f"       {why[:88]}")
             if r["missing"]:
                 print(f"       missing: {', '.join(r['missing'])}")
+            if r.get("abstained"):
+                print(f"       ABSTAIN: {r['abstain_reason'][:80]}")
+            for c in r.get("conflicts", []):
+                print(f"       CONFLICT: {c[:80]}")
 
         if s.number == "05" and snap["rows"]:
             sid = snap["rows"][0]["stay_id"]
