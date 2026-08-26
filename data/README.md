@@ -188,10 +188,42 @@ Mendeley. Re-verify with `sha256sum` if you re-download.
 
 ---
 
-## Yale extraction — status
+## Yale extraction — done
 
-`5v_cleandf.RData` is downloaded and intact but **not yet extracted**. It needs
-one of:
+`yale_triage_slim.csv` — 560,486 rows x 24 columns, extracted with
+`make extract-yale`. Layer 1 trains on it.
+
+**The vitals are not rotated.** The check in the extraction script came back
+clean: HR median 84, SBP 131, DBP 80, RR 18, SpO2 98, temp 98.0 — all
+physiologically right, so the column names can be trusted despite the paper's
+variable table describing them one row out.
+
+Confirmed against the paper: admission rate 29.7%, three hospitals
+(A 322,283 / B 166,497 / C 71,706), ESI 1-5 present with 2,457 missing.
+
+Two properties of this dataset that matter downstream:
+
+- **No pain score** in the slim extract, and it is an **adults-only** study, so
+  `is_paediatric` is constant zero. Both features are dropped at fit time and
+  recorded in `metrics["features_dropped"]`. Paediatric cases come from the
+  synthetic generator, which is why that generator exists.
+- **`disposition` is the strings `Admit` / `Discharge`**, not 0/1. Coercing to
+  numeric silently yields an all-zero label and a model that trains happily on
+  nothing.
+
+### If you need to re-extract
+
+Requires R. On Linux Mint 22.x the CRAN repo line must point at `noble`, not
+`jammy` — Mint 22 is built on Ubuntu 24.04, and the jammy packages depend on
+`libicu70`/`libtiff5` which do not exist there:
+
+```bash
+sudo sed -i 's|ubuntu jammy-cran40/|ubuntu noble-cran40/|' /etc/apt/sources.list
+sudo apt update && sudo apt install r-base
+make extract-yale
+```
+
+Alternatives if R will not install:
 
 1. **R (recommended, ~2 min)** — `sudo apt install r-base` then
    `Rscript data/yale/extract_yale.R`. Needs your sudo password.

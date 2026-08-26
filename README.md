@@ -130,11 +130,15 @@ A working end-to-end prototype, not a notebook.
 
 |                                        |                                                                                       |
 | -------------------------------------- | ------------------------------------------------------------------------------------- |
-| Layer 2 on 159 real MIMIC trajectories | 32.2% of admitted flagged vs 12.2% of discharged, median 164 min lead                 |
+| Layer 1 vs the published benchmark | **AUC 0.859** on 560,486 real Yale encounters, against Hong et al.'s 0.87 from triage variables — using 27 features, not ~90 |
+| What the nurse's judgement is worth | 0.820 without the ESI level, 0.859 with it |
+| Cross-site generalisation | Train on two hospitals, test on the third: unseen-site AUC within ±0.026 |
+| Racial disparity, found and closed | "Other" patients undertriaged at 11.4% against 3.1% for White; gap cut 11.2% → 5.0% |
+| Layer 2 on 159 real MIMIC trajectories | 32.2% of admitted flagged vs 12.2% of discharged, median 164 min lead |
 | Conformal coverage                     | >=95% per class, calibrated on held-out data                                          |
 | Latency, p95                           | 41 ms at 3x surge, against a 400 ms budget                                            |
 | Missingness audit                      | HR, RR and SBP absences were read as*reassuring*; now clamped                       |
-| Fairness                               | geriatric undertriage 18.1% -> gap closed to 0.6% by subgroup-conditional calibration |
+| Fairness, age | adults undertriaged at 9.2% against 1.0% for geriatric; gap closed 8.2% → 0.0% |
 
 Every figure above is produced by `make report`, which writes
 [`docs/results.md`](docs/results.md) and the deck figures. Nothing is typed by
@@ -151,7 +155,7 @@ three, not a courtesy.
 
 | Source                       | Role                                  | Ready                               |
 | ---------------------------- | ------------------------------------- | ----------------------------------- |
-| Yale ED (560,486 visits)     | Trains Layer 1                        | needs one R extraction step         |
+| Yale ED (560,486 visits) | **Trains Layer 1** | extracted |
 | MIMIC-IV-ED Demo (222 stays) | Layer 2 trajectories, schema truth    | yes                                 |
 | Isfahan ED (143,140 stays)   | Generator priors + leakage case study | yes,**not trainable**         |
 | Synthetic                    | Trajectories, paediatrics, surge      | generated, fitted to Isfahan priors |

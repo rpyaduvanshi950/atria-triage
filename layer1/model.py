@@ -84,6 +84,8 @@ class AcuityScorer:
         #: Scores for patients missing these are clamped — see _clamp.
         self.unsafe_missing: list[str] = []
         self.medians_: dict[str, float] = {}
+        #: features this source could not support (constant or wholly absent)
+        self.metrics_dropped: list[str] = []
         self.model: HistGradientBoostingClassifier | None = None
         self.columns: list[str] = []
         self.threshold: float = 0.5
@@ -106,7 +108,19 @@ class AcuityScorer:
         Xtr, Xcal, ytr, ycal = train_test_split(
             Xtr, ytr, test_size=0.3, random_state=seed, stratify=strat2)
 
-        self.columns = list(X.columns)
+        # Drop features this source cannot support. Yale is an adults-only study,
+        # so is_paediatric is constant zero, and its slim extract carries no pain
+        # score — both are properties of the dataset, not faults. A constant or
+        # all-missing column crashes the histogram binner, and silently keeping
+        # one would be worse: it teaches nothing and hides that the source is
+        # narrower than the feature set assumes.
+        usable = [c for c in X.columns if X[c].nunique(dropna=True) >= 2]
+        dropped = [c for c in X.columns if c not in usable]
+        if dropped:
+            self.metrics_dropped = dropped
+        X, Xtr, Xcal, Xte = X[usable], Xtr[usable], Xcal[usable], Xte[usable]
+
+        self.columns = list(usable)
         self.model = HistGradientBoostingClassifier(
             max_iter=200, learning_rate=0.08, max_depth=6,
             early_stopping=False, random_state=seed)
@@ -120,6 +134,8 @@ class AcuityScorer:
         self.metrics = {
             "n_train": len(Xtr), "n_cal": len(Xcal), "n_test": len(Xte),
             "conformal_coverage": self.conformal.coverage,
+            "features_dropped": list(self.metrics_dropped),
+            "n_features": len(self.columns),
             "prevalence": round(float(y.mean()), 4),
             "auc": round(float(roc_auc_score(yte, p)), 4) if yte.nunique() > 1 else None,
         }

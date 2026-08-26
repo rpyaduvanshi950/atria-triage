@@ -1,28 +1,43 @@
 # Measured results
 
-Generated 2026-08-22 by `make report`. Every figure below comes from a script in `eval/`; none is typed by hand.
+Generated 2026-08-26 by `make report`. Every figure below comes from a script in `eval/`; none is typed by hand.
 
 
 ## Layer 1 — acuity scorer
 
+_Trained on: Yale ED, 560,486 real encounters across three hospitals (Hong et al. 2018)_
+
 | metric | value |
 |---|---|
-| AUC | 0.8205 |
-| sensitivity at operating point | 95.2% |
-| specificity at that point | 22.6% |
-| undertriage rate | 4.8% |
-| outcome prevalence | 15.0% |
-| train / calibrate / test | 2940 / 1260 / 1800 |
+| AUC | 0.8588 |
+| sensitivity at operating point | 95.0% |
+| specificity at that point | 52.1% |
+| undertriage rate | 5.0% |
+| outcome prevalence | 29.7% |
+| train / calibrate / test | 274638 / 117702 / 168146 |
 
 Operating point tuned to 95% sensitivity, matching the ACS <=5% undertriage standard, rather than to accuracy. Specificity is the price and is reported.
+
+
+### Against the published benchmark
+
+Hong et al. (2018) trained on these same 560,486 encounters and reported AUC 0.87 from triage variables alone, and 0.92 with full patient history across 972 variables.
+
+| model | features | AUC |
+|---|---|---|
+| Hong et al., triage variables only | ~90 one-hot | 0.87 |
+| **ATRIA**, vitals + demographics + nurse ESI | 27 | **0.8588** |
+| Hong et al., full model with history | 972 | 0.92 |
+
+The nurse's own ESI level is worth roughly 0.04 AUC on its own: without it the same model reaches 0.820. That is a measure of how much of triage is human judgement rather than vital signs.
 
 
 ## Confidence — Mondrian conformal coverage
 
 | class | empirical coverage |
 |---|---|
-| class_0 | 95.4% |
-| class_1 | 97.4% |
+| class_0 | 95.0% |
+| class_1 | 95.0% |
 
 Class-conditional, calibrated on a split held out from fitting. Marginal conformal reaches its average by under-covering the rare class — here the critical patients — which is why the guarantee is made per class.
 
@@ -44,54 +59,69 @@ Queue aging is suppressed for this measurement: real ED stays run for hours, so 
 
 ### Per-subgroup performance at the operating point
 
-| attribute   | group      |    n |   prevalence |   sensitivity |   false_alarm_rate |   undertriage |
-|:------------|:-----------|-----:|-------------:|--------------:|-------------------:|--------------:|
-| age_band    | adult      | 2804 |       0.0942 |        0.9848 |             0.8717 |        0.0152 |
-| age_band    | geriatric  | 1908 |       0.0608 |        0.819  |             0.558  |        0.181  |
-| age_band    | paediatric | 1288 |       0.4022 |        1      |             0.9558 |        0      |
-| sex         | F          | 2997 |       0.1575 |        0.9725 |             0.7778 |        0.0275 |
-| sex         | M          | 3003 |       0.1419 |        0.9718 |             0.7707 |        0.0282 |
+| attribute   | group                            |      n |   prevalence |   sensitivity |   false_alarm_rate |   undertriage |
+|:------------|:---------------------------------|-------:|-------------:|--------------:|-------------------:|--------------:|
+| age_band    | adult                            | 392844 |       0.1992 |        0.9082 |             0.4155 |        0.0918 |
+| age_band    | geriatric                        | 167642 |       0.5273 |        0.9905 |             0.7312 |        0.0095 |
+| sex         | Female                           | 309653 |       0.2892 |        0.9465 |             0.4624 |        0.0535 |
+| sex         | Male                             | 250833 |       0.3073 |        0.9581 |             0.5001 |        0.0419 |
+| race        | American Indian or Alaska Native |    515 |       0.301  |        0.9548 |             0.55   |        0.0452 |
+| race        | Asian                            |   5790 |       0.2321 |        0.9249 |             0.3587 |        0.0751 |
+| race        | Black or African American        | 157884 |       0.2377 |        0.9366 |             0.4195 |        0.0634 |
+| race        | Other                            |  89359 |       0.2057 |        0.8865 |             0.3833 |        0.1135 |
+| race        | Patient Refused                  |   5203 |       0.2183 |        0.919  |             0.4    |        0.081  |
+| race        | Unknown                          |   1702 |       0.2086 |        0.9155 |             0.3467 |        0.0845 |
+| race        | White or Caucasian               | 299632 |       0.3593 |        0.9692 |             0.5571 |        0.0308 |
 
 ### Equalised-odds gaps
 
-| attribute   |   tpr_gap |   fpr_gap |   equalised_odds_diff | worst_served                  | within_tolerance   |
-|:------------|----------:|----------:|----------------------:|:------------------------------|:-------------------|
-| age_band    |    0.181  |    0.3978 |                0.3978 | geriatric (81.9% sensitivity) | False              |
-| sex         |    0.0007 |    0.0071 |                0.0071 | M (97.2% sensitivity)         | True               |
+| attribute   |   tpr_gap |   fpr_gap |   equalised_odds_diff | worst_served               | within_tolerance   |
+|:------------|----------:|----------:|----------------------:|:---------------------------|:-------------------|
+| age_band    |    0.0823 |    0.3157 |                0.3157 | adult (90.8% sensitivity)  | False              |
+| race        |    0.0827 |    0.2104 |                0.2104 | Other (88.6% sensitivity)  | False              |
+| sex         |    0.0116 |    0.0377 |                0.0377 | Female (94.7% sensitivity) | True               |
 
-### Mitigation — subgroup-conditional conformal (age_band)
+### Mitigation — subgroup-conditional conformal (race)
 
-| group      |    n |   sensitivity_before |   sensitivity_after |   false_alarm_before |   false_alarm_after |   threshold |
-|:-----------|-----:|---------------------:|--------------------:|---------------------:|--------------------:|------------:|
-| adult      | 2804 |               0.9848 |              0.9508 |               0.8717 |              0.7323 |     0.01356 |
-| geriatric  | 1908 |               0.819  |              0.9569 |               0.558  |              0.8811 |     0.00128 |
-| paediatric | 1288 |               1      |              0.9517 |               0.9558 |              0.3571 |     0.08821 |
+| group                                     |      n |   sensitivity_before |   sensitivity_after |   false_alarm_before |   false_alarm_after |   threshold |
+|:------------------------------------------|-------:|---------------------:|--------------------:|---------------------:|--------------------:|------------:|
+| American Indian or Alaska Native          |    515 |               0.9548 |              0.9548 |               0.55   |              0.55   |     0.14625 |
+| Asian                                     |   5790 |               0.9249 |              0.9501 |               0.3587 |              0.4037 |     0.11824 |
+| Black or African American                 | 157884 |               0.9366 |              0.95   |               0.4195 |              0.4457 |     0.12861 |
+| Native Hawaiian or Other Pacific Islander |    375 |               0.9241 |              0.962  |               0.4088 |              0.4324 |     0.13739 |
+| Other                                     |  89359 |               0.8865 |              0.95   |               0.3833 |              0.5053 |     0.09249 |
+| Patient Refused                           |   5203 |               0.919  |              0.9507 |               0.4    |              0.4655 |     0.11174 |
+| Unknown                                   |   1702 |               0.9155 |              0.9521 |               0.3467 |              0.4039 |     0.11766 |
+| White or Caucasian                        | 299632 |               0.9692 |              0.95   |               0.5571 |              0.5007 |     0.18093 |
+| unknown                                   |     26 |               0.8571 |              1      |               0.3158 |              0.6842 |     0.03287 |
 
-**TPR gap 18.1% -> 0.6%.** Each group gets its own coverage guarantee rather than a shared average that hides the worst-served group inside it.
+**TPR gap 11.2% -> 5.0%.** Each group gets its own coverage guarantee rather than a shared average that hides the worst-served group inside it.
 
 
 ## Latency
 
 | path | n | p50 | p95 | p99 | max |
 |---|---|---|---|---|---|
-| arrival (3x surge) | 120 | 25.69 | 45.62 | 60.28 | 65.09 | 
-| vitals (3x surge) | 919 | 5.06 | 12.08 | 13.87 | 16.36 | 
+| arrival (3x surge) | 120 | 25.23 | 52.48 | 86.46 | 119.05 | 
+| vitals (3x surge) | 896 | 4.91 | 12.53 | 14.07 | 16.29 | 
 
 All milliseconds. Budget is 400 ms, the figure already on the solution slide.
 
 
 ## Generalisation
 
-_cross-source fallback (Yale not yet extracted)_
+_Yale three-hospital split_
 
 | key | value |
 |---|---|
-| trained_on | synthetic (n=3000, priors from Isfahan) |
-| evaluated_on | mimic_demo (n=222 stays) |
-| auc_in_domain | 0.8356 |
-| auc_out_of_domain | 0.5677 |
-| drop | 0.2679 |
-| caveat | the label also changes: synthetic scores physiological deterioration, MIMIC scores admission. This drop mixes domain shift with label shift and is an upper bound on the former. Yale's dep_name split is the clean test. |
+| holdout_site | C |
+| sites | ['A', 'B', 'C'] |
+| auc_A | 0.8498 |
+| n_A | 322283 |
+| auc_B | 0.8756 |
+| n_B | 166497 |
+| auc_C | 0.8344 |
+| n_C | 71706 |
 
 ## The missingness audit
 
@@ -99,14 +129,14 @@ Blanking each vital and measuring the shift in predicted risk. Fields marked uns
 
 | field       |   baseline_risk |   risk_when_missing |   delta | direction   | safe   |
 |:------------|----------------:|--------------------:|--------:|:------------|:-------|
-| temperature |          0.1416 |              0.1367 | -0.0049 | LOWERS RISK | False  |
-| heartrate   |          0.1416 |              0.1411 | -0.0005 | LOWERS RISK | False  |
-| resprate    |          0.1416 |              0.1379 | -0.0037 | LOWERS RISK | False  |
-| o2sat       |          0.1416 |              0.1428 |  0.0011 | raises risk | True   |
-| sbp         |          0.1416 |              0.1209 | -0.0208 | LOWERS RISK | False  |
-| dbp         |          0.1416 |              0.1402 | -0.0015 | LOWERS RISK | False  |
+| temperature |          0.3014 |              0.3132 |  0.0118 | raises risk | True   |
+| heartrate   |          0.3014 |              0.3188 |  0.0174 | raises risk | True   |
+| resprate    |          0.3014 |              0.3077 |  0.0063 | raises risk | True   |
+| o2sat       |          0.3014 |              0.3032 |  0.0018 | raises risk | True   |
+| sbp         |          0.3014 |              0.2957 | -0.0057 | LOWERS RISK | False  |
+| dbp         |          0.3014 |              0.3051 |  0.0037 | raises risk | True   |
 
-Unsafe fields found: `temperature, heartrate, resprate, sbp, dbp`
+Unsafe fields found: `sbp`
 
 
 ## The Isfahan trap

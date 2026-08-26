@@ -39,16 +39,21 @@ def yale_cross_site(holdout: str | None = None) -> dict:
         if m.sum() < 50 or y[m].nunique() < 2:
             continue
         out[f"auc_{s}"] = round(float(roc_auc_score(y[m], tr.score_frame(X[m]))), 4)
+        out[f"n_{s}"] = int(m.sum())
     return out
 
 
 def _fit_on(ds, X: pd.DataFrame, y: pd.Series) -> AcuityScorer:
+    # Holding out a hospital makes dep_name constant in the training split, and a
+    # constant column crashes the histogram binner. Drop whatever this split
+    # cannot support, exactly as AcuityScorer.fit does.
+    usable = [c for c in X.columns if X[c].nunique(dropna=True) >= 2]
     m = AcuityScorer()
-    m.columns = list(X.columns)
+    m.columns = list(usable)
     from sklearn.ensemble import HistGradientBoostingClassifier
     m.model = HistGradientBoostingClassifier(max_iter=200, learning_rate=0.08,
                                              max_depth=6, early_stopping=False,
-                                             random_state=0).fit(X, y)
+                                             random_state=0).fit(X[usable], y)
     return m
 
 
