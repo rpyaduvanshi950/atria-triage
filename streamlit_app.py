@@ -91,6 +91,9 @@ def init(surge: float) -> None:
     if "engine" not in st.session_state:
         st.session_state.shift_seed = 21
         new_shift(surge)
+        # warm start: a board that opens empty looks broken, and the first
+        # arrivals carry no history for Layer 2 to reason about yet
+        advance(90)
 
 
 def advance(step: int) -> None:
@@ -152,11 +155,10 @@ with st.sidebar:
     st.caption("A live queue, not a label. Emergency department triage that "
                "re-ranks continuously and never de-escalates on its own.")
 
-    running = st.toggle("Run the shift", value=True)
-    speed = st.select_slider("Events per tick", [1, 2, 4, 8], value=2)
+    running = st.toggle("Run the shift", value=True, key="running")
+    speed = st.select_slider("Events per tick", [1, 2, 4, 8], value=2, key="speed")
     surge = st.select_slider("Arrival volume", [1.0, 2.0, 3.0], value=1.0,
-                             format_func=lambda v: f"{v:.0f}× normal")
-    st.session_state.surge = surge
+                             format_func=lambda v: f"{v:.0f}× normal", key="surge")
 
     degraded = st.toggle("Kill the model service", value=False,
                          help="Scenario 06 — Layer 0 keeps gating deterministically.")
@@ -175,85 +177,92 @@ with st.sidebar:
                f"missingness as signal.")
 
 init(surge)
-engine = st.session_state.engine
-if running:
-    advance(int(speed))
-snap = engine.snapshot()
 
-# ------------------------------------------------------------------ board ---
-st.markdown("#### ATRIA · Bay A")
-cols = st.columns(6)
-for col, (label, value) in zip(cols, [
-    ("Waiting", snap["waiting"]),
-    ("In treatment", f'{snap["in_treatment"]}/{snap["slots"]}'),
-    ("Seen", snap["seen"]),
-    ("Escalated", snap["escalated"]),
-    ("Abstained", snap["abstained"]),
-    ("Clock", snap["now"][11:16]),
-]):
-    col.metric(label, value)
-
-if snap["degraded"]:
-    st.error("**DEGRADED MODE** · model service unavailable · Layer 0 red-flag gate still active",
-             icon="⚠️")
-
-lanes = " &nbsp; ".join(f"{k} <b>{v}</b>" for k, v in snap["lanes"].items())
-st.markdown(f'<div class="lanebar">{lanes} &nbsp;&nbsp;·&nbsp;&nbsp; '
-            f'scoring p95 <b>{snap["p95_ms"] or "–"} ms</b></div>', unsafe_allow_html=True)
-
-board, side = st.columns([2.1, 1])
-
-with board:
-    if not snap["rows"]:
-        st.caption("Waiting for the first arrival…")
-    for r in snap["rows"][:14]:
-        st.markdown(render_row(r), unsafe_allow_html=True)
-
-with side:
-    st.markdown('<div class="atria-h">Movement</div>', unsafe_allow_html=True)
-    verb = {"arrived": "arrived", "seen": "taken through", "left": "left",
-            "escalated": "escalated"}
-    ticker = "".join(
-        f'<div class="tick {t["kind"]}">{t["at"]} <b>{t["ticket"]} '
-        f'{verb.get(t["kind"], t["kind"])}</b> · {t["detail"]}</div>'
-        for t in snap["ticker"][:9])
-    st.markdown(ticker or '<div class="tick">no movement yet</div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="atria-h" style="margin-top:18px">Clinician override</div>',
-                unsafe_allow_html=True)
-    waiting = [r for r in snap["rows"] if r["state"] != "IN TREATMENT"]
-    if waiting:
-        pick = st.selectbox("Patient", [r["ticket"] for r in waiting],
-                            label_visibility="collapsed")
-        row = next(r for r in waiting if r["ticket"] == pick)
-        band = st.select_slider("New band", [1, 2, 3, 4, 5], value=row["band"])
-        reason = st.selectbox("Reason", [
-            "reassessed_at_bedside", "clinically_well", "known_baseline",
-            "artefact", "resource_constraint", "other"], label_visibility="collapsed")
-        if band > row["band"]:
-            st.warning("This lowers the patient's priority — the one move no model "
-                       "in this system may make.", icon="⚠️")
-        if st.button("Record override", use_container_width=True):
-            engine.override(row["stay_id"], band, reason, "nurse.demo")
-            st.rerun()
-    else:
-        st.caption("Nobody waiting.")
-
-    st.markdown('<div class="atria-h" style="margin-top:18px">Audit trail</div>',
-                unsafe_allow_html=True)
-    intact, note = engine.audit.verify()
-    st.caption(f"{'✅' if intact else '❌'} {note}")
-    with st.expander(f"{len(engine.audit)} entries"):
-        for e in reversed(engine.audit.entries[-12:]):
-            st.markdown(
-                f'<div class="tick">{e.seq} <b>{e.kind}</b> · {e.hash[:10]}'
-                f' &larr; {e.prev_hash[:10]}</div>', unsafe_allow_html=True)
 
 @st.fragment(run_every=2)
-def _pulse() -> None:
-    """Drives the redraw while the shift is running."""
-    st.rerun()
+def board() -> None:
+    """
+    The board, redrawn on a timer.
+
+    The refresh has to live *here*, on the thing being redrawn. An empty
+    fragment calling st.rerun() loops forever without ever finishing the script,
+    which renders as a permanently blank page.
+    """
+    engine = st.session_state.engine
+    if st.session_state.get("running", True):
+        advance(int(st.session_state.get("speed", 2)))
+    snap = engine.snapshot()
+
+    st.markdown("#### ATRIA · Bay A")
+    cols = st.columns(6)
+    for col, (label, value) in zip(cols, [
+        ("Waiting", snap["waiting"]),
+        ("In treatment", f'{snap["in_treatment"]}/{snap["slots"]}'),
+        ("Seen", snap["seen"]),
+        ("Escalated", snap["escalated"]),
+        ("Abstained", snap["abstained"]),
+        ("Clock", snap["now"][11:16]),
+    ]):
+        col.metric(label, value)
+
+    if snap["degraded"]:
+        st.error("**DEGRADED MODE** · model service unavailable · "
+                 "Layer 0 red-flag gate still active", icon="⚠️")
+
+    lanes = " &nbsp; ".join(f"{k} <b>{v}</b>" for k, v in snap["lanes"].items())
+    st.markdown(f'<div class="lanebar">{lanes} &nbsp;&nbsp;·&nbsp;&nbsp; '
+                f'scoring p95 <b>{snap["p95_ms"] or "–"} ms</b></div>',
+                unsafe_allow_html=True)
+
+    left, right = st.columns([2.1, 1])
+
+    with left:
+        if not snap["rows"]:
+            st.caption("Waiting for the first arrival…")
+        for r in snap["rows"][:14]:
+            st.markdown(render_row(r), unsafe_allow_html=True)
+
+    with right:
+        st.markdown('<div class="atria-h">Movement</div>', unsafe_allow_html=True)
+        verb = {"arrived": "arrived", "seen": "taken through", "left": "left",
+                "escalated": "escalated"}
+        ticker = "".join(
+            f'<div class="tick {t["kind"]}">{t["at"]} <b>{t["ticket"]} '
+            f'{verb.get(t["kind"], t["kind"])}</b> · {t["detail"]}</div>'
+            for t in snap["ticker"][:9])
+        st.markdown(ticker or '<div class="tick">no movement yet</div>',
+                    unsafe_allow_html=True)
+
+        st.markdown('<div class="atria-h" style="margin-top:18px">Clinician override</div>',
+                    unsafe_allow_html=True)
+        waiting = [r for r in snap["rows"] if r["state"] != "IN TREATMENT"]
+        if waiting:
+            pick = st.selectbox("Patient", [r["ticket"] for r in waiting],
+                                label_visibility="collapsed", key="ovr_pick")
+            row = next((r for r in waiting if r["ticket"] == pick), waiting[0])
+            band = st.select_slider("New band", [1, 2, 3, 4, 5], value=row["band"],
+                                    key="ovr_band")
+            reason = st.selectbox("Reason", [
+                "reassessed_at_bedside", "clinically_well", "known_baseline",
+                "artefact", "resource_constraint", "other"],
+                label_visibility="collapsed", key="ovr_reason")
+            if band > row["band"]:
+                st.warning("This lowers the patient's priority — the one move no "
+                           "model in this system may make.", icon="⚠️")
+            if st.button("Record override", use_container_width=True):
+                engine.override(row["stay_id"], band, reason, "nurse.demo")
+        else:
+            st.caption("Nobody waiting.")
+
+        st.markdown('<div class="atria-h" style="margin-top:18px">Audit trail</div>',
+                    unsafe_allow_html=True)
+        intact, note = engine.audit.verify()
+        st.caption(f"{'✅' if intact else '❌'} {note}")
+        with st.expander(f"{len(engine.audit)} entries"):
+            for e in reversed(engine.audit.entries[-12:]):
+                st.markdown(
+                    f'<div class="tick">{e.seq} <b>{e.kind}</b> · {e.hash[:10]}'
+                    f' &larr; {e.prev_hash[:10]}</div>', unsafe_allow_html=True)
 
 
-if running:
-    _pulse()
+board()
