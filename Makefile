@@ -1,4 +1,4 @@
-.PHONY: help setup test test-all status demo scenarios eval fairness figures report extract-yale clean
+.PHONY: help setup test test-all status demo streamlit scenarios eval fairness figures report extract-yale clean
 
 help:
 	@echo "ATRIA — Accenture Innovation Challenge 2026, Track 2"
@@ -6,7 +6,8 @@ help:
 	@echo "  make setup         create .venv and install dependencies"
 	@echo "  make test          run the test suite (skips slow measurement runs)"
 	@echo "  make test-all      everything, including figure and report generation"
-	@echo "  make demo          start the live board on :8000"
+	@echo "  make demo          start the live board on :8000 (FastAPI)"
+	@echo "  make streamlit     start the Streamlit board on :8501"
 	@echo "  make status        show which data sources are ready"
 	@echo "  make scenarios     run the six demo scenarios"
 	@echo "  make eval          latency, cross-site and Layer 2 lead time"
@@ -18,7 +19,7 @@ help:
 setup:
 	python3 -m venv .venv
 	.venv/bin/pip install --quiet --upgrade pip
-	.venv/bin/pip install --quiet -r requirements.txt
+	.venv/bin/pip install --quiet -r requirements-dev.txt
 
 test:
 	.venv/bin/python -m pytest tests/ -m "not slow"
@@ -28,6 +29,9 @@ test-all:
 
 demo:
 	.venv/bin/uvicorn service.app:app --host 127.0.0.1 --port 8000
+
+streamlit:
+	.venv/bin/streamlit run streamlit_app.py
 
 scenarios:
 	.venv/bin/python -m scenarios.run

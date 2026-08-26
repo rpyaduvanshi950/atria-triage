@@ -45,6 +45,44 @@ Runs all six demo scenarios deterministically through the same engine and prints
 what happened. Same result every time, so takes are reproducible. `make demo` is
 the live board; `make scenarios` is what you narrate against.
 
+### Or run the Streamlit version
+
+```bash
+make streamlit      # http://localhost:8501
+```
+
+Same engine, different shell. The FastAPI build pushes state over a websocket;
+the Streamlit build reruns inside an auto-refreshing fragment. Everything below
+the presentation layer is the identical code path — Layer 0 gates, Layer 1
+scores, Layer 2 re-ranks, Layer 3 records — so both boards show the same system.
+
+Use the sidebar to change arrival volume, kill the model service, or restart the
+shift. Overrides and the audit trail are on the right.
+
+## Deploying to Streamlit Community Cloud
+
+The repo is ready to deploy as-is: `streamlit_app.py` at the root,
+`requirements.txt` pinned to runtime dependencies only, `runtime.txt` naming
+Python 3.12, and a dark theme in `.streamlit/config.toml`.
+
+1. Go to <https://share.streamlit.io> and sign in with GitHub.
+2. **New app** → pick this repo, branch `main`, main file `streamlit_app.py`.
+3. Deploy. First build takes a few minutes while it installs scikit-learn.
+
+Two things worth knowing before you click:
+
+- **This repo is private.** The free tier allows unlimited public apps but only
+  **one private app**. Either spend that slot here, or make the repo public
+  first — `gh repo edit --visibility public`.
+- **No raw data is needed.** The datasets are gitignored, so the deployed app
+  reads `data/isfahan_priors.json` instead: aggregate statistics precomputed
+  from the real 143,582 encounters. Same distributions, 1 KB, and no
+  redistribution question. Verified by hiding the CSVs and rebuilding a shift.
+
+The free tier gives 1 GB of RAM and sleeps after 12 quiet hours. The scorer is
+trained once per container behind `@st.cache_resource` on 1,500 patients, which
+is sized to fit.
+
 ### Everything else
 
 ```bash

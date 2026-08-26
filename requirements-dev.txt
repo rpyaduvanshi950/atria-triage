@@ -1,0 +1,8 @@
+-r requirements.txt
+# Local development and the evaluation suite.
+pytest>=7.0
+matplotlib>=3.8
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pyreadr>=0.5
+openpyxl>=3.1

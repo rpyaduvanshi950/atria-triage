@@ -15,6 +15,7 @@ pitch rather than letting a judge find it.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -75,16 +76,37 @@ class Priors:
 
     @classmethod
     def fit(cls, isfahan_root: Path | str = "data/isfahan") -> "Priors":
-        """Fit from the real Isfahan distribution when available."""
+        """
+        Fit from the real Isfahan distribution.
+
+        Three sources, in order: the raw CSVs if present, then the precomputed
+        summary in data/isfahan_priors.json, then hardcoded constants. The JSON
+        exists so a deployment without the raw data still uses real priors — it
+        holds aggregate statistics only, which is both far smaller and free of
+        any redistribution question.
+        """
         path = Path(isfahan_root) / "ED_triage.csv"
         if not path.exists():
-            return cls(FALLBACK_AGE, FALLBACK_GRADE, "fallback constants")
+            return cls.from_json()
         df = pd.read_csv(path, usecols=["age", "TriageGrade"], low_memory=False)
         age = pd.to_numeric(df["age"], errors="coerce").dropna()
         q = [float(age.quantile(p)) for p in (0.01, 0.15, 0.30, 0.50, 0.70, 0.90, 0.99)]
         counts = df["TriageGrade"].value_counts(normalize=True)
         probs = {int(k): float(v) for k, v in counts.items() if 1 <= int(k) <= 5}
         return cls(q, probs, f"isfahan n={len(df):,}")
+
+    @classmethod
+    def from_json(cls, path: Path | str = "data/isfahan_priors.json") -> "Priors":
+        """Precomputed real priors, for deployments without the raw dataset."""
+        path = Path(path)
+        if not path.exists():
+            return cls(FALLBACK_AGE, FALLBACK_GRADE, "fallback constants")
+        spec = json.loads(path.read_text())
+        return cls(
+            [float(x) for x in spec["age_quantiles"]],
+            {int(k): float(v) for k, v in spec["grade_probs"].items()},
+            f"{spec['source']} (precomputed)",
+        )
 
 
 def generate(
