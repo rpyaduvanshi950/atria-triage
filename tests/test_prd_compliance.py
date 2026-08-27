@@ -271,3 +271,74 @@ def test_the_streamlit_app_lists_the_attributes_it_depends_on():
     engine = QueueEngine(AcuityScorer().fit(generate(600, seed=3)), slots=0)
     for attr in declared:
         assert hasattr(engine, attr), f"app expects engine.{attr}, which does not exist"
+
+
+# --- double-submit: Streamlit replays widget state on fragment reruns --------
+
+def test_finalising_twice_is_refused_not_silently_repeated():
+    """
+    A button handler can fire twice for one click when a fragment reruns. The
+    engine must reject the second call rather than double-signing — and the UI
+    must not be the only thing standing between a stale click and a corrupt
+    audit trail.
+    """
+    from layer3.workflow import Stage
+    q = QueueEngine(AcuityScorer().fit(generate(600, seed=3)), slots=0)
+    for e in build_events(generate(10, seed=5)):
+        q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
+    sid = q.snapshot()["rows"][0]["stay_id"]
+
+    q.nurse_assess(sid, 3)
+    q.reveal(sid)
+    q.finalise(sid, clinician="n", reason_code="clinically_well")
+    assert q.workflow.open(sid).stage is Stage.SIGNED
+
+    before = len(q.audit)
+    with pytest.raises(BlindAssessmentError, match="cannot finalise from signed"):
+        q.finalise(sid, clinician="n", reason_code="clinically_well")
+    assert len(q.audit) == before, "a refused transition must not write to the log"
+
+
+def test_the_nurse_may_change_their_mind_before_reveal_but_not_after():
+    """
+    PRD ASS-006 — changing ESI before sign-off is allowed, and returns to blind
+    selection. What is refused is revising the answer once ATRIA has been seen,
+    because at that point the choice is no longer independent.
+    """
+    q = QueueEngine(AcuityScorer().fit(generate(600, seed=3)), slots=0)
+    for e in build_events(generate(10, seed=5)):
+        q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
+    sid = q.snapshot()["rows"][0]["stay_id"]
+
+    q.nurse_assess(sid, 3)
+    q.nurse_assess(sid, 4)                       # allowed: still blind
+    assert q.workflow.open(sid).nurse_esi == 4
+
+    q.reveal(sid)
+    with pytest.raises(BlindAssessmentError, match="already at"):
+        q.nurse_assess(sid, 2)                   # refused: ATRIA has been seen
+
+
+def test_the_app_gates_every_transition_on_the_current_stage():
+    """Each engine call in the UI is guarded, so a replayed click cannot reach it."""
+    src = open("streamlit_app.py").read()
+    for call in ("eng.nurse_assess", "eng.finalise"):
+        idx = src.index(call)
+        window = src[max(0, idx - 220):idx]
+        assert "a.stage is" in window, f"{call} is not gated on the workflow stage"
+    assert "def act(" in src, "transitions must run through the act() guard"
+
+
+def test_reruns_fall_back_when_fragment_scope_is_illegal():
+    """
+    st.rerun(scope="fragment") is only legal during a fragment rerun. A click
+    landing on a full script run — after any sidebar change — raises instead, so
+    every redraw goes through refresh(), which falls back.
+    """
+    src = open("streamlit_app.py").read()
+    assert "def refresh(" in src
+    body = src.split("def refresh(", 1)[1].split("def act(", 1)[0]
+    assert "StreamlitAPIException" in body and "st.rerun()" in body
+    after = src.split("def act(", 1)[1]
+    assert 'st.rerun(scope="fragment")' not in after, \
+        "call refresh() rather than scoping a rerun directly"

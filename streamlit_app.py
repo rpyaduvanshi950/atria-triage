@@ -19,6 +19,7 @@ from data.loaders.synthetic import generate, surge_missing_rate   # noqa: E402
 from layer1.model import AcuityScorer                             # noqa: E402
 from service import decision_window, forecast                      # noqa: E402
 from service.clock import build_events                            # noqa: E402
+from layer3.workflow import BlindAssessmentError, Stage
 from service.queue import QueueEngine                             # noqa: E402
 
 ESI_LABELS = {1: "Resuscitation", 2: "Emergent", 3: "Urgent",
@@ -270,6 +271,39 @@ def render_vitals(row: dict) -> str:
     return f'<div class="vitals">{"".join(cells)}</div>'
 
 
+def refresh() -> None:
+    """
+    Redraw after an action.
+
+    scope="fragment" is only legal *during* a fragment rerun. A click that lands
+    on a full script run — which is what happens after any sidebar change, and
+    what AppTest always does — raises instead. Fall back to a whole-script rerun
+    rather than crashing the board.
+    """
+    from streamlit.errors import StreamlitAPIException
+    try:
+        st.rerun(scope="fragment")
+    except StreamlitAPIException:
+        st.rerun()
+
+
+def act(fn, *args, **kwargs) -> bool:
+    """
+    Run a workflow transition, refusing gracefully instead of crashing.
+
+    Streamlit replays widget state on a fragment rerun, so a button handler can
+    fire twice for one click — the second time against a workflow that has
+    already moved on. The engine is right to reject that; the board should say
+    so quietly rather than throw a traceback across the screen.
+    """
+    try:
+        fn(*args, **kwargs)
+        return True
+    except BlindAssessmentError as exc:
+        st.info(f"Already done — {str(exc).split(': ', 1)[-1]}", icon="↩️")
+        return False
+
+
 def step_bar(stage: str) -> str:
     """Where the nurse is in the blind cycle. Three states, always visible."""
     order = ["awaiting_nurse", "compared", "signed"]
@@ -399,9 +433,9 @@ def tab_assessment() -> None:
             for i in range(1, 6):
                 if st.button(f"**{i}** · {ESI_LABELS[i]}", key=f"esi_{sid}_{i}",
                              width='stretch', help=ESI_MEANING[i]):
-                    eng.nurse_assess(sid, i)
-                    eng.reveal(sid)
-                    st.rerun(scope="fragment")
+                    if a.stage is Stage.AWAITING_NURSE and act(eng.nurse_assess, sid, i):
+                        act(eng.reveal, sid)
+                    refresh()
         else:
             atria = view["atria_esi"]
             st.markdown(
@@ -434,21 +468,31 @@ def tab_assessment() -> None:
                            "will not guess. Complete the vitals, or give a reason to "
                            "sign off regardless.", icon="❓")
 
-            reason = ""
-            if view["needs_reason"]:
+            if a.stage is Stage.SIGNED:
+                st.success(f"**Signed off at ESI {view['final_esi']}.** "
+                           f"Recorded with your identity, the model version and "
+                           f"the input snapshot.", icon="🔏")
+                st.caption("Select another patient from the queue, or report a "
+                           "change below to reopen this one.")
+                reason = ""
+            else:
+                reason = ""
+            if a.stage is not Stage.SIGNED and view["needs_reason"]:
                 reason = st.selectbox(
                     "Why?", list(REASON_LABELS), key=f"why_{sid}",
                     format_func=lambda k: REASON_LABELS[k])
             label = ("Confirm & send inside" if view["nurse_esi"] <= 2
                      else "Confirm & advance")
-            if st.button(label, width='stretch', key=f"fin_{sid}", type="primary"):
-                eng.finalise(sid, clinician="nurse.demo", reason_code=reason)
-                st.rerun(scope="fragment")
+            if a.stage is not Stage.SIGNED and st.button(
+                    label, width='stretch', key=f"fin_{sid}", type="primary"):
+                if a.stage is Stage.COMPARED:
+                    act(eng.finalise, sid, clinician="nurse.demo", reason_code=reason)
+                refresh()
 
         st.write("")
         if st.button("⟲ Report change / worsening", width='stretch', key=f"worse_{sid}"):
-            eng.report_change(sid)
-            st.rerun(scope="fragment")
+            act(eng.report_change, sid)
+            refresh()
         st.caption("Clears the sign-off and starts a **fresh blind cycle**. The old "
                    "recommendation is discarded — showing it would anchor the very "
                    "decision this keeps independent.")
