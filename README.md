@@ -130,8 +130,8 @@ A working end-to-end prototype, not a notebook.
 
 |                                        |                                                                                       |
 | -------------------------------------- | ------------------------------------------------------------------------------------- |
-| Layer 1 vs the published benchmark | **AUC 0.859** on 560,486 real Yale encounters, against Hong et al.'s 0.87 from triage variables — using 27 features, not ~90 |
-| What the nurse's judgement is worth | 0.820 without the ESI level, 0.859 with it |
+| Layer 1 vs the published benchmark | **AUC 0.809** on 560,486 real Yale encounters, PRD-compliant features only — the benchmark's 0.87 uses the nurse's ESI and race, both of which the PRD forbids |
+| The price of independence | 0.859 with the nurse's ESI, 0.809 without. That ~0.05 is what it costs to produce a recommendation that can genuinely disagree with the nurse |
 | Cross-site generalisation | Train on two hospitals, test on the third: unseen-site AUC within ±0.026 |
 | Racial disparity, found and closed | "Other" patients undertriaged at 11.4% against 3.1% for White; gap cut 11.2% → 5.0% |
 | Layer 2 on 159 real MIMIC trajectories | 32.2% of admitted flagged vs 12.2% of discharged, median 164 min lead |
@@ -178,6 +178,32 @@ tests/        94 tests — one per red-flag rule, the invariant, the audit chain
 docs/         business proposal, measured results, figures, deck changes
 Makefile      every command above
 ```
+
+## Blind nurse-first assessment
+
+The nurse commits to an ESI **before** ATRIA's recommendation exists on their
+screen — not hidden by CSS, absent from the payload. Only then is it revealed
+and the two compared.
+
+This is an anti-anchoring mechanism. Show a clinician a number first and they
+converge on it; automation bias is not a failure of diligence, it is how
+attention works under load. It has a second benefit: every encounter produces an
+independent human label, which is the only way to tell whether the model is
+adding anything.
+
+It is also why the model may not use the nurse's ESI as a feature. A model that
+reads the answer cannot disagree with it, and the comparison would be theatre.
+
+| outcome | reason required |
+|---|---|
+| match | no |
+| nurse **more** urgent than ATRIA | no — logged, nurse's view stands |
+| nurse **less** urgent than ATRIA | **yes**, before sign-off |
+| Layer 0 guardrail active | **yes**, plus charge-nurse escalation |
+| ATRIA abstained | **yes**, if signing off before the gap is resolved |
+
+Reporting a change clears the sign-off and starts a fresh blind cycle. The old
+recommendation is discarded rather than carried over.
 
 ## The three atria mortis
 

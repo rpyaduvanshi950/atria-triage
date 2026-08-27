@@ -48,6 +48,7 @@ def lane_for(band: int) -> str:
 from layer1.model import AcuityScorer
 from layer2.ratchet import Source, apply
 from layer3.audit import AuditLog
+from layer3.workflow import BlindAssessmentError, Outcome, Stage, Workflow
 from layer2.trajectory import REASSESS_MINUTES, assess
 
 
@@ -77,6 +78,7 @@ class Patient:
     seen_at_band: int | None = None
     #: RF11/RF12 — the system declined to rank this patient
     abstained: bool = False
+    worsening: bool = False
     abstain_reason: str = ""
     diagnostic_confidence: str = "HIGH"
     pathway: str | None = None
@@ -91,6 +93,7 @@ class Patient:
             band=self.band, band_before=self.band_before,
             state="IN TREATMENT" if self.seen_at is not None else self.state,
             lane=lane_for(self.band), abstained=self.abstained,
+            worsening=self.worsening,
             abstain_reason=self.abstain_reason,
             diagnostic_confidence=self.diagnostic_confidence,
             pathway=self.pathway, conflicts=list(self.conflicts),
@@ -113,6 +116,7 @@ class QueueEngine:
         self.slots = slots
         self.scorer = scorer
         self.audit = audit or AuditLog()
+        self.workflow = Workflow()
         self.patients: dict[int, Patient] = {}
         self.now: pd.Timestamp | None = None
         self.latencies: list[float] = []
@@ -327,6 +331,66 @@ class QueueEngine:
             audit_entries=len(self.audit),
             audit_intact=self.audit.verify()[0],
         )
+
+    # --- blind nurse-first assessment (PRD 5.2, 6.1, 10.1) -------------------
+
+    def nurse_assess(self, stay_id: int, esi: int) -> dict:
+        """The nurse commits to an ESI. ATRIA is still hidden at this point."""
+        a = self.workflow.open(stay_id)
+        a.submit_nurse_esi(esi)
+        self.audit.append("nurse_assessment", stay_id, self.now,
+                          nurse_esi=esi, cycle=a.cycle, blind=True)
+        return a.visible_to_nurse()
+
+    def reveal(self, stay_id: int) -> dict:
+        """Reveal ATRIA and resolve the comparison. Refuses to run early."""
+        a = self.workflow.open(stay_id)
+        p = self.patients.get(stay_id) or self.in_treatment.get(stay_id)
+        if p is None:
+            raise KeyError(stay_id)
+        outcome = a.reveal(p.band if not p.abstained else None,
+                           abstained=p.abstained, guardrail=bool(p.red_flag))
+        self.audit.append("atria_reveal", stay_id, self.now,
+                          nurse_esi=a.nurse_esi, atria_esi=a.atria_esi,
+                          outcome=outcome.value, needs_reason=a.needs_reason,
+                          abstained=p.abstained, guardrail=bool(p.red_flag))
+        return a.visible_to_nurse()
+
+    def finalise(self, stay_id: int, *, clinician: str, reason_code: str = "") -> dict:
+        """Sign off. Blocked without a reason where the PRD requires one."""
+        a = self.workflow.open(stay_id)
+        final = a.finalise(clinician=clinician, reason_code=reason_code)
+        p = self.patients.get(stay_id) or self.in_treatment.get(stay_id)
+        if p is not None:
+            p.band = apply(p.band, final, Source.HUMAN)
+            p.signed_off = True
+            p.state = "STABLE"
+        self.audit.append("sign_off", stay_id, self.now, final_esi=final,
+                          nurse_esi=a.nurse_esi, atria_esi=a.atria_esi,
+                          outcome=a.outcome.value if a.outcome else None,
+                          reason_code=reason_code, clinician=clinician,
+                          cycle=a.cycle)
+        return a.visible_to_nurse()
+
+    def report_change(self, stay_id: int, *, reporter: str = "nurse.demo") -> dict:
+        """
+        Staff report the patient has worsened.
+
+        This clears any prior sign-off and forces a fresh *blind* cycle. The
+        previous ATRIA recommendation is discarded rather than carried over —
+        showing it would anchor the very decision that has to stay independent.
+        """
+        a = self.workflow.open(stay_id)
+        a.reopen("worsening reported")
+        p = self.patients.get(stay_id) or self.in_treatment.get(stay_id)
+        if p is not None:
+            p.signed_off = False
+            p.state = "AWAITING"
+            p.worsening = True
+        self.audit.append("worsening_reported", stay_id, self.now,
+                          reporter=reporter, cycle=a.cycle,
+                          cleared_sign_off=True)
+        return a.visible_to_nurse()
 
     def override(self, stay_id: int, band: int, reason_code: str, clinician: str) -> dict:
         """The only path that may lower urgency. Layer 3 records it."""

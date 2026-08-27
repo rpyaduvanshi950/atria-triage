@@ -22,3 +22,6 @@ __pycache__/
 
 # personal notes / transcripts — not part of the deliverable
 test.md
+
+# voice notes — personal recordings, not deliverables
+docsfromsatyansh/*.ogg

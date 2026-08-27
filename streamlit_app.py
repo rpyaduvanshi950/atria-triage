@@ -17,8 +17,15 @@ st.set_page_config(page_title="ATRIA · live triage board",
 
 from data.loaders.synthetic import generate, surge_missing_rate   # noqa: E402
 from layer1.model import AcuityScorer                             # noqa: E402
+from service import decision_window, forecast                      # noqa: E402
 from service.clock import build_events                            # noqa: E402
 from service.queue import QueueEngine                             # noqa: E402
+
+ESI_LABELS = {1: "Resuscitation", 2: "Emergent", 3: "Urgent",
+              4: "Less urgent", 5: "Non-urgent"}
+
+REASON_CODES = ["reassessed_at_bedside", "clinically_well", "known_baseline",
+                "artefact", "resource_constraint", "other"]
 
 CSS = """
 <style>
@@ -166,7 +173,7 @@ with st.sidebar:
     if "engine" in st.session_state:
         st.session_state.engine.degraded = degraded
 
-    if st.button("Restart the shift", use_container_width=True):
+    if st.button("Restart the shift", width='stretch'):
         st.session_state.shift_seed = st.session_state.get("shift_seed", 21) + 1
         new_shift(surge)
 
@@ -179,21 +186,13 @@ with st.sidebar:
 init(surge)
 
 
-@st.fragment(run_every=2)
-def board() -> None:
-    """
-    The board, redrawn on a timer.
-
-    The refresh has to live *here*, on the thing being redrawn. An empty
-    fragment calling st.rerun() loops forever without ever finishing the script,
-    which renders as a permanently blank page.
-    """
+def tab_assessment() -> None:
+    """Blind nurse-first triage. ATRIA stays locked until the nurse commits."""
     engine = st.session_state.engine
     if st.session_state.get("running", True):
         advance(int(st.session_state.get("speed", 2)))
     snap = engine.snapshot()
 
-    st.markdown("#### ATRIA · Bay A")
     cols = st.columns(6)
     for col, (label, value) in zip(cols, [
         ("Waiting", snap["waiting"]),
@@ -214,55 +213,206 @@ def board() -> None:
                 f'scoring p95 <b>{snap["p95_ms"] or "–"} ms</b></div>',
                 unsafe_allow_html=True)
 
-    left, right = st.columns([2.1, 1])
+    queue_col, work_col, record_col = st.columns([1.25, 1.15, 0.95])
 
-    with left:
+    with queue_col:
+        st.markdown('<div class="atria-h">Attention queue</div>', unsafe_allow_html=True)
+        st.caption("Rank is not ESI. It is a live sequence; ESI is what the nurse signs.")
         if not snap["rows"]:
             st.caption("Waiting for the first arrival…")
-        for r in snap["rows"][:14]:
+        for r in snap["rows"][:12]:
             st.markdown(render_row(r), unsafe_allow_html=True)
 
-    with right:
-        st.markdown('<div class="atria-h">Movement</div>', unsafe_allow_html=True)
-        verb = {"arrived": "arrived", "seen": "taken through", "left": "left",
-                "escalated": "escalated"}
-        ticker = "".join(
-            f'<div class="tick {t["kind"]}">{t["at"]} <b>{t["ticket"]} '
-            f'{verb.get(t["kind"], t["kind"])}</b> · {t["detail"]}</div>'
-            for t in snap["ticker"][:9])
-        st.markdown(ticker or '<div class="tick">no movement yet</div>',
-                    unsafe_allow_html=True)
+    waiting = [r for r in snap["rows"] if r["state"] != "IN TREATMENT"]
 
-        st.markdown('<div class="atria-h" style="margin-top:18px">Clinician override</div>',
-                    unsafe_allow_html=True)
-        waiting = [r for r in snap["rows"] if r["state"] != "IN TREATMENT"]
-        if waiting:
-            pick = st.selectbox("Patient", [r["ticket"] for r in waiting],
-                                label_visibility="collapsed", key="ovr_pick")
-            row = next((r for r in waiting if r["ticket"] == pick), waiting[0])
-            band = st.select_slider("New band", [1, 2, 3, 4, 5], value=row["band"],
-                                    key="ovr_band")
-            reason = st.selectbox("Reason", [
-                "reassessed_at_bedside", "clinically_well", "known_baseline",
-                "artefact", "resource_constraint", "other"],
-                label_visibility="collapsed", key="ovr_reason")
-            if band > row["band"]:
-                st.warning("This lowers the patient's priority — the one move no "
-                           "model in this system may make.", icon="⚠️")
-            if st.button("Record override", use_container_width=True):
-                engine.override(row["stay_id"], band, reason, "nurse.demo")
-        else:
+    with work_col:
+        st.markdown('<div class="atria-h">Nurse assessment</div>', unsafe_allow_html=True)
+        if not waiting:
             st.caption("Nobody waiting.")
+            return
 
-        st.markdown('<div class="atria-h" style="margin-top:18px">Audit trail</div>',
-                    unsafe_allow_html=True)
-        intact, note = engine.audit.verify()
-        st.caption(f"{'✅' if intact else '❌'} {note}")
-        with st.expander(f"{len(engine.audit)} entries"):
-            for e in reversed(engine.audit.entries[-12:]):
-                st.markdown(
-                    f'<div class="tick">{e.seq} <b>{e.kind}</b> · {e.hash[:10]}'
-                    f' &larr; {e.prev_hash[:10]}</div>', unsafe_allow_html=True)
+        pick = st.selectbox("Patient", [r["ticket"] for r in waiting],
+                            label_visibility="collapsed", key="assess_pick")
+        row = next((r for r in waiting if r["ticket"] == pick), waiting[0])
+        sid = row["stay_id"]
+        a = engine.workflow.open(sid)
+        view = a.visible_to_nurse()
+
+        age = f"{round(row['age'])}{row['gender'] or ''}" if row.get("age") is not None else "—"
+        st.markdown(f"**{row['complaint']}** · {age} · waited {row['waited']}m")
+
+        window = decision_window.seconds_for(
+            flow_state=st.session_state.get("flow_state", "Steady"),
+            esi=row["band"], age=row.get("age"))
+        st.caption(f"Decision window {window}s · expiry prompts and logs; "
+                   f"it never assigns an ESI.")
+
+        if not view["revealed"]:
+            st.info("ATRIA is locked. Choose an ESI first — the recommendation "
+                    "is not on this page until you do.", icon="🔒")
+            esi_cols = st.columns(5)
+            for i, col in enumerate(esi_cols, start=1):
+                if col.button(f"{i}", key=f"esi_{sid}_{i}", width='stretch',
+                              help=ESI_LABELS[i]):
+                    engine.nurse_assess(sid, i)
+                    engine.reveal(sid)
+                    st.rerun(scope="fragment")
+            st.caption(" · ".join(f"{i} {ESI_LABELS[i]}" for i in range(1, 6)))
+        else:
+            outcome = view.get("outcome")
+            c1, c2 = st.columns(2)
+            c1.metric("Nurse ESI", view["nurse_esi"])
+            c2.metric("ATRIA", view["atria_esi"] if view["atria_esi"] else "abstained")
+
+            if outcome == "match":
+                st.success("ESI match", icon="✅")
+            elif outcome == "nurse_escalation":
+                st.warning("You are more urgent than ATRIA. Your view stands; "
+                           "the difference is logged. No reason required.", icon="⬆️")
+            elif outcome == "nurse_downgrade":
+                st.warning("You are less urgent than ATRIA. A reason is required "
+                           "before sign-off.", icon="⬇️")
+            elif outcome == "guardrail":
+                st.error("Layer 0 critical guardrail is active. Going less urgent "
+                         "requires a reason and escalates to the charge nurse.", icon="🚨")
+            elif outcome == "uncertain":
+                st.warning("ATRIA abstained — essential data missing. Complete the "
+                           "vital set, or give a reason to sign off regardless.", icon="❓")
+
+            reason = ""
+            if view["needs_reason"]:
+                reason = st.selectbox("Reason", REASON_CODES, key=f"why_{sid}")
+            label = ("Confirm & send inside" if view["nurse_esi"] <= 2
+                     else "Confirm & advance")
+            if st.button(label, width='stretch', key=f"fin_{sid}"):
+                engine.finalise(sid, clinician="nurse.demo", reason_code=reason)
+                st.rerun(scope="fragment")
+
+        if st.button("Report change / worsening", width='stretch',
+                     key=f"worse_{sid}"):
+            engine.report_change(sid)
+            st.rerun(scope="fragment")
+        st.caption("Reporting a change clears any sign-off and starts a fresh "
+                   "blind assessment. The old recommendation is discarded.")
+
+    with record_col:
+        st.markdown('<div class="atria-h">Patient record</div>', unsafe_allow_html=True)
+        st.markdown(f"**{row['complaint']}**")
+        why = row["red_flag"] or " · ".join(row["reasons"]) or "—"
+        st.caption(why)
+        if row.get("pathway"):
+            st.caption(f"Pathway: {row['pathway']}")
+        if row["missing"]:
+            st.warning(f"Missing: {', '.join(row['missing'])}", icon="⚠️")
+        if row.get("abstained"):
+            st.error(row["abstain_reason"] or "system abstained", icon="⛔")
+        for c in row.get("conflicts", []):
+            st.error(f"Treatment conflict · {c}", icon="⚡")
+
+
+def tab_operations() -> None:
+    """Demand against staffed capacity for the next hour."""
+    engine = st.session_state.engine
+    snap = engine.snapshot()
+
+    st.markdown('<div class="atria-h">Staffing and connected systems</div>',
+                unsafe_allow_html=True)
+    left, right = st.columns([1, 1.4])
+    with left:
+        nurses = st.slider("Nurses available", 1, 12, 6, key="ops_nurses")
+        spaces = st.slider("Physical treatment spaces", 4, 40, 20, key="ops_spaces")
+        st.markdown("**Connected systems**")
+        records = st.toggle("Records", value=True, key="ops_records")
+        beds = st.toggle("Beds / spaces", value=True, key="ops_beds")
+        roster = st.toggle("Staff roster", value=True, key="ops_roster")
+        vitals = st.toggle("Vitals feed", value=True, key="ops_vitals")
+
+    f = forecast.FlowInputs(
+        waiting=snap["waiting"], inside=snap["in_treatment"], nurses=nurses,
+        arrival_rate_per_hour=13.0, physical_spaces=spaces,
+        records_connected=records, beds_connected=beds,
+        roster_connected=roster, vitals_connected=vitals)
+    out = forecast.project(f)
+    st.session_state.flow_state = out.state
+
+    with right:
+        m = st.columns(4)
+        m[0].metric("Flow state", out.state)
+        m[1].metric("Open staffed spaces", out.open_spaces)
+        m[2].metric("Wait buffer", f"{out.wait_buffer_minutes:.0f}m")
+        m[3].metric("Arrivals / hour", out.arrivals_next_hour)
+        st.info(out.explanation, icon="📋")
+        for note in out.assumptions:
+            st.warning(note, icon="⚠️")
+
+    import pandas as pd
+    chart = pd.DataFrame({
+        "minutes from now": [p.minute for p in out.points],
+        "In treatment": [p.in_treatment for p in out.points],
+        "Waiting": [p.waiting for p in out.points],
+        "Staffed spaces": [out.staffed_spaces] * len(out.points),
+    }).set_index("minutes from now")
+    st.line_chart(chart, color=["#45C4B2", "#E8903F", "#E5766A"], height=280)
+    st.caption("In treatment is capped at staffed spaces — you cannot treat more "
+               "people than you have staffed places for. Waiting is not capped, "
+               "because a queue can grow past capacity, and hiding that would "
+               "hide the one thing worth seeing. A staffed space is physically "
+               "available *and* safely staffed; it is not a licensed bed.")
+    st.caption("This informs ordering within an ESI band only. It can never move "
+               "a patient across one.")
+
+
+def tab_history() -> None:
+    """Audit log first, general log second."""
+    engine = st.session_state.engine
+    intact, note = engine.audit.verify()
+    st.markdown('<div class="atria-h">Audit log</div>', unsafe_allow_html=True)
+    st.caption(f"{'✅' if intact else '❌'} {note}")
+
+    mode = st.radio("View", ["Audit log", "General log"], horizontal=True,
+                    label_visibility="collapsed", key="hist_mode")
+    decision_kinds = {"nurse_assessment", "atria_reveal", "sign_off",
+                      "override", "worsening_reported", "abstain"}
+
+    rows = []
+    for e in reversed(engine.audit.entries):
+        if mode == "Audit log" and e.kind not in decision_kinds:
+            continue
+        rows.append({
+            "seq": e.seq, "at": str(e.at)[11:19], "event": e.kind,
+            "stay": e.stay_id,
+            "detail": ", ".join(f"{k}={v}" for k, v in e.payload.items()
+                                if v not in (None, "", [], False))[:90],
+            "hash": e.hash[:10], "prev": e.prev_hash[:10],
+        })
+    if rows:
+        import pandas as pd
+        st.dataframe(pd.DataFrame(rows), width='stretch', height=420,
+                     hide_index=True)
+    else:
+        st.caption("No events yet.")
+    st.caption("Append-only. Each entry embeds the hash of the one before it, so "
+               "an edit or deletion anywhere breaks the chain and is detectable. "
+               "Corrections create a new linked event; nothing is ever rewritten.")
+
+
+@st.fragment(run_every=2)
+def board() -> None:
+    """
+    The board, redrawn on a timer.
+
+    The refresh has to live here, on the thing being redrawn. An empty fragment
+    calling st.rerun() loops forever without ever finishing the script, which
+    renders as a permanently blank page.
+    """
+    assessment, operations, history = st.tabs(
+        ["Assessment", "Operations & Flow", "History"])
+    with assessment:
+        tab_assessment()
+    with operations:
+        tab_operations()
+    with history:
+        tab_history()
 
 
 board()

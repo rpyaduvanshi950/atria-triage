@@ -44,21 +44,45 @@ def sbp_hypotension_threshold(patient: dict) -> float:
     return 90.0
 
 
+#: Age-banded reference ranges (low, high). Prototype defaults from the PRD's
+#: Appendix A; must be externalised and clinically approved before real use.
+HR_RANGES = ((5, 70, 140), (8, 65, 130), (12, 60, 120), (15, 55, 115), (999, 50, 110))
+RR_RANGES = ((5, 18, 34), (12, 14, 30), (15, 12, 26), (999, 10, 30))
+
+
+def _range_for(age: float | None, table) -> tuple[float, float]:
+    if age is None:
+        age = 99                       # unknown age is assessed as an adult
+    for upper, lo, hi in table:
+        if age < upper:
+            return float(lo), float(hi)
+    return float(table[-1][1]), float(table[-1][2])
+
+
 def tachycardia_threshold(patient: dict) -> float:
-    """Age-banded tachycardia, PALS reference ranges."""
-    age = patient.get("age")
-    if age is None or age >= 12:
-        return 130.0
-    if age < 1:
-        return 180.0
-    if age < 5:
-        return 160.0
-    return 140.0
+    """Upper bound of the age-appropriate heart-rate range."""
+    return _range_for(patient.get("age"), HR_RANGES)[1]
+
+
+def bradycardia_threshold(patient: dict) -> float:
+    """Lower bound of the age-appropriate heart-rate range."""
+    return _range_for(patient.get("age"), HR_RANGES)[0]
+
+
+def resprate_high_threshold(patient: dict) -> float:
+    return _range_for(patient.get("age"), RR_RANGES)[1]
+
+
+def resprate_low_threshold(patient: dict) -> float:
+    return _range_for(patient.get("age"), RR_RANGES)[0]
 
 
 THRESHOLD_FNS = {
     "sbp_hypotension": sbp_hypotension_threshold,
     "tachycardia": tachycardia_threshold,
+    "bradycardia": bradycardia_threshold,
+    "resprate_high": resprate_high_threshold,
+    "resprate_low": resprate_low_threshold,
 }
 
 OPS = {
@@ -179,6 +203,23 @@ class RuleTable:
         return sum(1 for f in TRIAGEABLE_FIELDS
                    if patient.get(f) is not None and patient.get(f) == patient.get(f))
 
+    def _branch(self, patient: dict, conds: list[dict], policy: str
+                ) -> tuple[bool, list[str]]:
+        """Evaluate one conjunction of conditions."""
+        imputed: list[str] = []
+        for cond in conds:
+            value, was_imputed = self._resolve(patient, cond["field"], policy)
+            if value is None:
+                return False, []
+            if was_imputed:
+                imputed.append(cond["field"])
+            limit = cond.get("value")
+            if "value_fn" in cond:
+                limit = THRESHOLD_FNS[cond["value_fn"]](patient)
+            if not OPS[cond["op"]](value, limit):
+                return False, []
+        return True, imputed
+
     def evaluate(self, patient: dict, available: set[str] | None = None) -> GateResult:
         """
         `available` names the fields the data source can supply at all. Rules
@@ -192,26 +233,22 @@ class RuleTable:
 
         for rule in self.rules:
             if available is not None:
-                needs = {c["field"] for c in rule["all_of"]}
+                branches_f = ([b["all_of"] for b in rule["any_of"]] if "any_of" in rule
+                              else [rule["all_of"]])
+                needs = {c["field"] for br in branches_f for c in br}
                 if not needs <= available:
                     skipped.append(rule["id"])
                     continue
             policy = rule.get("missing_policy", "absent")
             imputed: list[str] = []
-            ok = True
 
-            for cond in rule["all_of"]:
-                value, was_imputed = self._resolve(patient, cond["field"], policy)
-                if value is None:
-                    ok = False
-                    break
-                if was_imputed:
-                    imputed.append(cond["field"])
-                limit = cond.get("value")
-                if "value_fn" in cond:
-                    limit = THRESHOLD_FNS[cond["value_fn"]](patient)
-                if not OPS[cond["op"]](value, limit):
-                    ok = False
+            # a rule is either one conjunction, or several any of which fire
+            branches = ([b["all_of"] for b in rule["any_of"]] if "any_of" in rule
+                        else [rule["all_of"]])
+            ok = False
+            for branch in branches:
+                ok, imputed = self._branch(patient, branch, policy)
+                if ok:
                     break
 
             if ok:

@@ -15,8 +15,11 @@ def test_well_patient_fires_nothing():
     assert not gate(WELL).is_red
 
 
-def test_all_ten_rules_present():
-    assert len(RuleTable().rules) == 10
+def test_all_vital_rules_are_present():
+    """Ten from the original deck, plus RF13 for age-banded respiratory rate."""
+    ids = set(RuleTable().ids())
+    assert len(ids) == 11
+    assert {f"RF{n:02d}" for n in range(1, 11)} | {"RF13"} == ids
 
 
 def test_every_rule_has_a_citation():

@@ -24,7 +24,7 @@ DERIVED = ["shock_index", "pulse_pressure", "is_paediatric", "is_geriatric"]
 #: Triage-time context beyond the vitals. Everything here is known the moment
 #: the patient is booked in — no history, no labs — so a model using it is still
 #: comparable to a "triage variables only" benchmark.
-CONTEXT_COLS = ("dep_name", "lang", "ethnicity", "insurance_status", "arrivalhour_bin")
+CONTEXT_COLS = ("dep_name", "lang", "arrivalhour_bin")
 
 #: Prior-use counts and last disposition. Known at triage for a returning
 #: patient, but they are *history*, and the published benchmarks separate
@@ -38,7 +38,12 @@ def _codes(series: pd.Series) -> pd.Series:
     return series.astype("category").cat.codes.astype(float).replace(-1, np.nan)
 
 
-def build(ds: Dataset, *, history: bool = False) -> pd.DataFrame:
+#: Attributes that may never enter the clinical model. Kept for auditing only.
+PROHIBITED = ("race", "ethnicity", "insurance_status")
+
+
+def build(ds: Dataset, *, history: bool = False,
+          leak_nurse_esi: bool = False) -> pd.DataFrame:
     """One row per stay, indexed by stay_id."""
     tri = ds.triage.set_index("stay_id")
     stays = ds.edstays.set_index("stay_id")
@@ -65,23 +70,32 @@ def build(ds: Dataset, *, history: bool = False) -> pd.DataFrame:
     X["arrived_by_ambulance"] = transport.str.contains("ambul").astype(int)
     X["arrival_mode"] = _codes(transport)
 
-    # The nurse's own triage level, as an *input*. This is not the same as
-    # training on it: the label remains the clinical outcome, so the model can
-    # and does disagree with the nurse. Excluding it would mean discarding the
-    # single most informative thing available at triage, and the published
-    # benchmark includes it.
-    X["esi"] = pd.to_numeric(tri["acuity"], errors="coerce")
+    # The nurse's ESI is deliberately NOT a feature.
+    #
+    # It is the most informative column in the dataset and including it lifts AUC
+    # from 0.820 to 0.859. It is excluded anyway, because ATRIA has to produce an
+    # *independent* recommendation the nurse can be compared against. A model that
+    # reads the nurse's answer cannot disagree with the nurse in any meaningful
+    # way, and the blind-assessment workflow it feeds would be theatre.
+    # (PRD 14.3.) Pass leak_nurse_esi=True only to quantify that gap.
+    if leak_nurse_esi:
+        X["esi"] = pd.to_numeric(tri["acuity"], errors="coerce")
 
-    for col in ("gender", "race"):
-        if col in stays.columns and stays[col].notna().any():
-            X[col] = _codes(stays[col].reindex(tri.index).astype(str))
+    # Sex is retained: it carries genuine physiological signal and is used in
+    # age/sex-specific reference ranges. Race is NOT — it is a social construct
+    # standing in for exposure and access, and using it as a predictive shortcut
+    # is how Obermeyer et al. (2019) describes algorithms encoding inequity.
+    # It stays available to eval/fairness.py for auditing, which is where a
+    # protected attribute belongs. (PRD 14.2, 14.3.)
+    if "gender" in stays.columns and stays["gender"].notna().any():
+        X["gender"] = _codes(stays["gender"].reindex(tri.index).astype(str))
 
     ext = ds.extensions.get("fairness_and_history")
     if ext is not None and not isinstance(ext, (str, bytes)):
         ext = ext.set_index("stay_id").reindex(tri.index)
         wanted = CONTEXT_COLS + (HISTORY_COLS if history else ())
         for col in wanted:
-            if col not in ext.columns:
+            if col not in ext.columns or col in PROHIBITED:
                 continue
             values = ext[col]
             X[col] = (pd.to_numeric(values, errors="coerce")

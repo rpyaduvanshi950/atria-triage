@@ -10,7 +10,7 @@
 #   absent      — witnessed events (seizure, haemorrhage). Absence of an
 #                 observation is not evidence of the event, and imputing these to
 #                 "true" would fire every rule on every patient with a blank form.
-version: "0.2.0"
+version: "0.3.0"
 
 # Meta-rules. These do not test a vital against a threshold — they test whether
 # the system is entitled to answer at all. Implemented in engine.py because they
@@ -72,6 +72,20 @@ rules:
       Systolic hypotension by age. Applying the adult 90 mmHg threshold to
       children produces both false alarms and, at the other end, missed shock.
     citation: "NEWS2, RCP 2017 (adult); PALS age-specific hypotension thresholds, AHA 2020 (paediatric)."
+
+  - id: RF13
+    name: Respiratory rate outside the age-appropriate range
+    # Adult <10 or >30/min. Age-banded rather than a single adult pair, because
+    # a respiratory rate of 32 is an emergency in an adult and normal in a
+    # toddler. PRD SAF-004 and Appendix A.
+    any_of:
+      - all_of: [{field: resprate, op: lt, value_fn: resprate_low}]
+      - all_of: [{field: resprate, op: gt, value_fn: resprate_high}]
+    missing_policy: worst_case
+    rationale: >
+      Respiratory rate is the earliest vital to move in deterioration and the
+      most often left unrecorded. Both bradypnoea and tachypnoea are critical.
+    citation: "NEWS2, RCP 2017 — RR <=8 or >=25 scores 3. PALS age-specific ranges, AHA 2020."
 
   - id: RF04
     name: Active seizure

@@ -83,11 +83,17 @@ def main() -> None:
         w("| model | features | AUC |")
         w("|---|---|---|")
         w("| Hong et al., triage variables only | ~90 one-hot | 0.87 |")
-        w(f"| **ATRIA**, vitals + demographics + nurse ESI | {m['n_features']} | **{m['auc']}** |")
+        w(f"| **ATRIA**, PRD-compliant features | {m['n_features']} | **{m['auc']}** |")
         w("| Hong et al., full model with history | 972 | 0.92 |")
-        w("\nThe nurse's own ESI level is worth roughly 0.04 AUC on its own: without "
-          "it the same model reaches 0.820. That is a measure of how much of triage "
-          "is human judgement rather than vital signs.\n")
+        w("\nATRIA scores lower than the benchmark on purpose. The published model "
+          "uses the nurse's own ESI level and demographic attributes including race; "
+          "the PRD forbids both (14.2, 14.3). Adding the nurse's ESI back lifts us to "
+          "0.859 — so roughly 0.05 AUC is the measurable price of producing a "
+          "recommendation that is genuinely independent of the nurse, and of refusing "
+          "to use race as a predictive shortcut. That is a price worth naming rather "
+          "than a gap worth hiding: a model that reads the nurse's answer cannot "
+          "meaningfully disagree with it, and the blind-assessment workflow it feeds "
+          "would be theatre.\n")
 
     w("\n## Confidence — Mondrian conformal coverage\n")
     w("| class | empirical coverage |")
@@ -159,14 +165,22 @@ def main() -> None:
         w(f"- `{p}`")
 
     w("\n## Stated limitations\n")
-    w("- Layer 1 is trained on synthetic patients calibrated to real priors. Yale's "
-      "560,486 real visits are downloaded but not yet extracted (needs R).")
-    w("- The synthetic outcome is physiological deterioration; Yale's is hospital "
-      "admission, a coarser acuity proxy. Neither is ICU-transfer-or-death.")
+    if real:
+        w("- The outcome label is hospital **admission**, a coarser acuity proxy "
+          "than ICU-transfer-or-death. No open ED dataset carries ICU timestamps; "
+          "this is the first thing to fix with real hospital access.")
+        w("- Yale is an **adults-only** study with no pain score, so `is_paediatric` "
+          "and `pain` are dropped at fit time. Paediatric cases come from the "
+          "synthetic generator, which is why that generator exists.")
+    else:
+        w("- Layer 1 is trained on synthetic patients calibrated to real priors; "
+          "Yale is not extracted.")
     w("- Layer 2 is validated on 159 real trajectories — a small sample.")
-    w("- Paediatric cases are synthetic; the adult sources cannot supply them.")
-    w("- Fairness is audited on sex and age band only until Yale supplies race, "
-      "ethnicity, language and insurance.")
+    w("- Race is audited but never used as a model input (PRD 14.2). Fairness "
+      "mitigation adjusts per-subgroup thresholds; it does not remove the "
+      "underlying difference in how patients arrive.")
+    w("- Every threshold here is a prototype default. None has been approved by a "
+      "clinical governance body, and none should be used on a real patient.")
 
     OUT.write_text("\n".join(L) + "\n")
     print(f"wrote {OUT}")

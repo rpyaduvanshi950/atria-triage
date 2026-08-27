@@ -29,7 +29,8 @@ SHOCK_INDEX_ALERT = 0.9          # HR/SBP >= 0.9 is a recognised concern thresho
 
 # Safe waiting time per priority band, in minutes. Breaching forces a re-look —
 # a long wait must never be silently absorbed.
-REASSESS_MINUTES = {1: 0, 2: 10, 3: 30, 4: 60, 5: 120}
+# PRD REA-002. Configuration, not UI constants: a site may set its own.
+REASSESS_MINUTES = {1: 5, 2: 15, 3: 45, 4: 90, 5: 180}
 
 
 @dataclass
