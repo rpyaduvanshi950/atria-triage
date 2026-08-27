@@ -24,56 +24,120 @@ from service.queue import QueueEngine                             # noqa: E402
 ESI_LABELS = {1: "Resuscitation", 2: "Emergent", 3: "Urgent",
               4: "Less urgent", 5: "Non-urgent"}
 
-REASON_CODES = ["reassessed_at_bedside", "clinically_well", "known_baseline",
-                "artefact", "resource_constraint", "other"]
+ESI_MEANING = {
+    1: "Needs a life-saving intervention now",
+    2: "High risk, or time-critical — cannot wait",
+    3: "Stable enough to wait briefly; likely several resources",
+    4: "Stable; likely one resource",
+    5: "Stable; likely nothing beyond an examination",
+}
+
+REASON_LABELS = {
+    "reassessed_at_bedside": "I reassessed at the bedside",
+    "clinically_well": "Vitals look alarming, the patient does not",
+    "known_baseline": "These readings are normal for this patient",
+    "artefact": "The reading is an artefact",
+    "resource_constraint": "Triage under genuine scarcity",
+    "other": "Other",
+}
+
+#: Adult reference ranges, shown beside each vital so a number means something.
+VITAL_REF = {
+    "heartrate": ("HR", "50–110", "bpm"),
+    "sbp": ("SBP", "90–180", "mmHg"),
+    "o2sat": ("SpO₂", "≥94", "%"),
+    "resprate": ("RR", "10–30", "/min"),
+    "temperature": ("Temp", "36–38.5", "°C"),
+}
 
 CSS = """
 <style>
   #MainMenu, footer {visibility:hidden}
-  .block-container{padding-top:2.1rem;max-width:1350px}
-  .atria-h{font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.14em;
-           text-transform:uppercase;color:#72837F;margin:0 0 6px}
+  .block-container{padding-top:1.6rem;max-width:1400px}
+
+  /* section labels */
+  .atria-h{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;letter-spacing:.16em;
+           text-transform:uppercase;color:#72837F;margin:0 0 8px;
+           border-bottom:1px solid #26352F;padding-bottom:6px}
+
+  /* the step flow across the top of the assessment */
+  .steps{display:flex;gap:0;margin:0 0 14px}
+  .step{flex:1;padding:9px 12px;border:1px solid #26352F;border-right:none;
+        font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#5C6D69}
+  .step:last-child{border-right:1px solid #26352F}
+  .step b{display:block;font-size:12.5px;color:#72837F;margin-bottom:2px;font-weight:500}
+  .step.on{background:#15201E;border-color:#45C4B2}
+  .step.on b{color:#45C4B2}
+  .step.on{color:#98A9A5}
+  .step.done b{color:#98A9A5}
+
   .lanebar{display:flex;gap:18px;flex-wrap:wrap;font-family:ui-monospace,Menlo,monospace;
-           font-size:11px;color:#72837F;padding:8px 0;border-top:1px solid #26352F;
-           border-bottom:1px solid #26352F;margin-bottom:6px}
+           font-size:11px;color:#72837F;padding:9px 0;border-top:1px solid #26352F;
+           border-bottom:1px solid #26352F;margin-bottom:10px}
   .lanebar b{color:#98A9A5;font-weight:500}
+
   .tick{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#72837F;
-        line-height:1.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        line-height:1.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .tick .arrived b{color:#98A9A5}.tick .seen b{color:#45C4B2}
-  .tick .left b{color:#72837F}.tick .escalated b{color:#E8903F}
-  .row{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:14px;
-       padding:11px 14px;margin-bottom:7px;background:#15201E;border:1px solid #26352F;
+  .tick .left b{color:#5C6D69}.tick .escalated b{color:#E8903F}
+
+  /* queue rows */
+  .row{display:grid;grid-template-columns:46px minmax(0,1fr);gap:12px;
+       padding:10px 12px;margin-bottom:6px;background:#15201E;border:1px solid #26352F;
        border-left:3px solid transparent}
   .row.ESCALATED{border-left-color:#E8903F}
   .row.AWAITING{border-left-color:#45C4B2}
   .row.red{border-left-color:#E5766A}
-  .row.abstain{border-left-color:#E5766A;background:linear-gradient(90deg,rgba(229,118,106,.08),#15201E 240px)}
-  .row.treat{opacity:.5;border-left-color:#72837F}
-  .band{font-family:ui-monospace,Menlo,monospace;font-size:23px;line-height:1;color:#E7EDEA}
-  .band small{display:block;font-size:9px;color:#E8903F;margin-top:4px}
-  .who{font-weight:600;font-size:14.5px;color:#E7EDEA}
+  .row.abstain{border-left-color:#E5766A;background:linear-gradient(90deg,rgba(229,118,106,.09),#15201E 260px)}
+  .row.treat{opacity:.42;border-left-color:#5C6D69}
+  .row.sel{outline:1px solid #45C4B2;outline-offset:1px}
+  .band{font-family:ui-monospace,Menlo,monospace;font-size:21px;line-height:1;color:#E7EDEA}
+  .band small{display:block;font-size:9px;color:#E8903F;margin-top:3px}
+  .who{font-weight:600;font-size:13.5px;color:#E7EDEA;line-height:1.3}
   .who .age{color:#72837F;font-weight:400;font-family:ui-monospace,Menlo,monospace;
-            font-size:11px;margin-left:7px}
-  .lane{font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.08em;
-        padding:1px 5px;border:1px solid #26352F;color:#72837F;margin-right:6px}
+            font-size:10.5px;margin-left:6px}
+  .lane{font-family:ui-monospace,Menlo,monospace;font-size:8.5px;letter-spacing:.09em;
+        padding:1px 5px;border:1px solid #26352F;color:#72837F;margin-right:5px}
   .lane.RESUS{border-color:#E5766A;color:#E5766A}
   .lane.ACUTE{border-color:#E8903F;color:#E8903F}
-  .tkt{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:#45C4B2;
-       border:1px solid #26352F;padding:1px 5px;margin-right:7px}
-  .why{color:#98A9A5;font-size:12.5px;margin-top:3px}
-  .tags{margin-top:6px;display:flex;gap:5px;flex-wrap:wrap}
-  .tag{font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.05em;
-       padding:2px 6px;border:1px solid #26352F;color:#72837F}
+  .tkt{font-family:ui-monospace,Menlo,monospace;font-size:10px;color:#45C4B2;
+       border:1px solid #26352F;padding:1px 5px;margin-right:6px}
+  .why{color:#98A9A5;font-size:11.5px;margin-top:3px;line-height:1.45}
+  .tags{margin-top:5px;display:flex;gap:4px;flex-wrap:wrap}
+  .tag{font-family:ui-monospace,Menlo,monospace;font-size:8.5px;letter-spacing:.05em;
+       padding:1px 5px;border:1px solid #26352F;color:#72837F}
   .tag.red{border-color:#E5766A;color:#E5766A}
   .tag.meas{border-color:#E8903F;color:#E8903F}
   .tag.HIGH{border-color:#45C4B2;color:#45C4B2}
   .tag.LOW{border-color:#E5766A;color:#E5766A}
-  .abst{margin-top:6px;padding:6px 9px;border-left:2px solid #E5766A;
+  .wait{float:right;font-family:ui-monospace,Menlo,monospace;font-size:10px;color:#5C6D69}
+  .wait .ov{color:#E8903F}
+
+  /* vitals grid in the record panel */
+  .vitals{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:4px}
+  .v{background:#15201E;border:1px solid #26352F;padding:7px 9px}
+  .v .k{font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.09em;
+        color:#5C6D69;text-transform:uppercase}
+  .v .n{font-family:ui-monospace,Menlo,monospace;font-size:17px;color:#E7EDEA;line-height:1.25}
+  .v .r{font-family:ui-monospace,Menlo,monospace;font-size:9px;color:#5C6D69}
+  .v.bad{border-color:#E5766A}      .v.bad .n{color:#E5766A}
+  .v.warn{border-color:#E8903F}     .v.warn .n{color:#E8903F}
+  .v.gone{border-style:dashed}      .v.gone .n{color:#E8903F;font-size:12px}
+
+  /* comparison cards after reveal */
+  .cmp{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:2px 0 10px}
+  .cmp .c{background:#15201E;border:1px solid #26352F;padding:11px 13px;text-align:center}
+  .cmp .c .k{font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.1em;
+             color:#5C6D69;text-transform:uppercase}
+  .cmp .c .n{font-size:27px;font-weight:600;color:#E7EDEA;line-height:1.15}
+  .cmp .c .l{font-size:11px;color:#72837F}
+  .cmp .c.nurse{border-color:#45C4B2}
+  .abst{margin-top:6px;padding:7px 10px;border-left:2px solid #E5766A;
         background:rgba(229,118,106,.09);font-family:ui-monospace,Menlo,monospace;
         font-size:10.5px;color:#E5766A;line-height:1.5}
-  .meta{text-align:right;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;
-        color:#72837F;white-space:nowrap}
-  .meta .ov{color:#E8903F}
+  .locked{background:#15201E;border:1px dashed #45C4B2;padding:13px 15px;
+          color:#98A9A5;font-size:12.5px;line-height:1.55}
+  .locked b{color:#45C4B2}
 </style>
 """
 
@@ -152,123 +216,170 @@ def advance(step: int) -> None:
         new_shift(st.session_state.get("surge", 1.0))
 
 
-def render_row(r: dict) -> str:
+def render_row(r: dict, selected: bool = False) -> str:
+    """One queue row. Compact enough that twelve fit without scrolling."""
     treat = r["state"] == "IN TREATMENT"
     cls = " ".join(["row", "treat" if treat else r["state"],
                     "red" if r["red_flag"] else "",
-                    "abstain" if r.get("abstained") else ""])
-    from_band = f"<small>&uarr; {r['band_before']}</small>" if r["band_before"] else ""
+                    "abstain" if r.get("abstained") else "",
+                    "sel" if selected else ""])
+    from_band = f"<small>&uarr;{r['band_before']}</small>" if r["band_before"] else ""
     why = r["red_flag"] or " · ".join(r["reasons"]) or r.get("needs_measurement") or "—"
     age = f"{round(r['age'])}{r['gender'] or ''}" if r.get("age") is not None else "—"
 
     tags = []
     if r["red_flag"]:
         tags.append('<span class="tag red">RED FLAG</span>')
+    if r.get("abstained"):
+        tags.append('<span class="tag red">ABSTAIN</span>')
     if r.get("needs_measurement") and not r["red_flag"]:
         tags.append('<span class="tag meas">MEASURE</span>')
+    if r.get("worsening"):
+        tags.append('<span class="tag meas">WORSENED</span>')
     tags.append(f'<span class="tag {r["confidence"]}">TRIAGE {r["confidence"]}</span>')
     dx = r.get("diagnostic_confidence", "HIGH")
-    tags.append(f'<span class="tag {dx}">DIAGNOSIS {dx}</span>')
-    if r.get("pathway"):
-        tags.append(f'<span class="tag">{r["pathway"]}</span>')
+    tags.append(f'<span class="tag {dx}">DX {dx}</span>')
     if r["missing"]:
-        tags.append(f'<span class="tag">missing: {", ".join(r["missing"])}</span>')
+        tags.append(f'<span class="tag meas">no {", ".join(r["missing"][:2])}</span>')
 
-    blocks = ""
-    if r.get("abstained"):
-        blocks += f'<div class="abst">{r["abstain_reason"] or "system abstained"}</div>'
-    for c in r.get("conflicts", []):
-        blocks += f'<div class="abst">TREATMENT CONFLICT · {c}</div>'
-
-    right = "in a bay" if treat else (
-        f'<div class="ov">{r["overdue_by"]}m past safe wait</div>' if r["overdue_by"] > 0 else "")
+    over = (f'<span class="ov"> · {r["overdue_by"]}m over</span>'
+            if r["overdue_by"] > 0 else "")
+    wait = ("in a bay" if treat else f'{r["waited"]}m{over}')
     return (
         f'<div class="{cls}"><div class="band">{r["band"]}{from_band}</div>'
-        f'<div><div class="who"><span class="lane {r.get("lane","")}">{r.get("lane","")}</span>'
+        f'<div><div class="who"><span class="wait">{wait}</span>'
+        f'<span class="lane {r.get("lane","")}">{r.get("lane","")}</span>'
         f'<span class="tkt">{r["ticket"]}</span>{r["complaint"]}'
         f'<span class="age">{age}</span></div>'
-        f'<div class="why">{why}</div><div class="tags">{"".join(tags)}</div>{blocks}</div>'
-        f'<div class="meta">waited {r["waited"]}m{right}</div></div>'
+        f'<div class="why">{why[:96]}</div><div class="tags">{"".join(tags)}</div></div></div>'
     )
 
 
-# ---------------------------------------------------------------- sidebar ---
+def render_vitals(row: dict) -> str:
+    """Vitals with their reference range beside them, so a number means something."""
+    cells = []
+    for key, (label, ref, unit) in VITAL_REF.items():
+        value = row.get("vitals", {}).get(key)
+        missing = value is None
+        tone = "gone" if missing else ""
+        shown = "not taken" if missing else f"{value:g}"
+        cells.append(
+            f'<div class="v {tone}"><div class="k">{label}</div>'
+            f'<div class="n">{shown}</div>'
+            f'<div class="r">{"must be measured" if missing else f"normal {ref} {unit}"}</div></div>')
+    return f'<div class="vitals">{"".join(cells)}</div>'
+
+
+def step_bar(stage: str) -> str:
+    """Where the nurse is in the blind cycle. Three states, always visible."""
+    order = ["awaiting_nurse", "compared", "signed"]
+    names = [("1", "Assess", "Choose an ESI. ATRIA is hidden."),
+             ("2", "Compare", "See ATRIA and resolve the difference."),
+             ("3", "Sign off", "Confirm, with a reason where required.")]
+    here = order.index(stage) if stage in order else 0
+    out = []
+    for i, (num, name, hint) in enumerate(names):
+        cls = "step on" if i == here else ("step done" if i < here else "step")
+        out.append(f'<div class="{cls}"><b>{num} · {name}</b>{hint}</div>')
+    return f'<div class="steps">{"".join(out)}</div>'
+
+
+# ------------------------------------------------------------------ sidebar --
 st.markdown(CSS, unsafe_allow_html=True)
 
 with st.sidebar:
-    st.markdown("### ATRIA")
-    st.caption("A live queue, not a label. Emergency department triage that "
-               "re-ranks continuously and never de-escalates on its own.")
+    st.markdown("## ATRIA")
+    st.caption("**A live queue, not a label.** Triage that reorders attention "
+               "continuously, so the patient who is *becoming* sickest is seen "
+               "sooner. It supports the nurse — it never prescribes, and it can "
+               "never lower anyone's priority on its own.")
 
-    running = st.toggle("Run the shift", value=True, key="running")
-    speed = st.select_slider("Events per tick", [1, 2, 4, 8], value=2, key="speed")
-    surge = st.select_slider("Arrival volume", [1.0, 2.0, 3.0], value=1.0,
-                             format_func=lambda v: f"{v:.0f}× normal", key="surge")
+    st.divider()
+    st.markdown("**Shift controls**")
+    running = st.toggle("Run the shift", value=True, key="running",
+                        help="Pause to study the board without it moving under you.")
+    speed = st.select_slider("Speed", [1, 2, 4, 8], value=2, key="speed",
+                             format_func=lambda v: f"{v}× ",
+                             help="Events processed per two-second tick.")
+    surge = st.select_slider("Arrival volume", [1.0, 2.0, 3.0], value=1.0, key="surge",
+                             format_func=lambda v: f"{v:.0f}× normal",
+                             help="Surge also degrades data quality — less time per "
+                                  "patient means more blank fields.")
 
-    degraded = st.toggle("Kill the model service", value=False,
-                         help="Scenario 06 — Layer 0 keeps gating deterministically.")
-    st.session_state.degraded = degraded
-    if "engine" in st.session_state:
-        engine().degraded = degraded
-
+    st.divider()
+    st.markdown("**Break something**")
+    degraded = st.toggle("Kill the model service", value=False, key="degraded",
+                         help="Layer 0 keeps gating deterministically, offline.")
     if st.button("Restart the shift", width='stretch'):
         st.session_state.shift_seed = st.session_state.get("shift_seed", 21) + 1
         new_shift(surge)
 
     st.divider()
-    st.caption(f"Missing-vitals rate this shift: "
-               f"**{st.session_state.get('missing_rate', 0.18):.0%}** — surge degrades "
-               f"data quality, which is when a model is most tempted to read "
-               f"missingness as signal.")
+    st.caption(f"Missing-vitals rate this shift **{st.session_state.get('missing_rate', 0.18):.0%}** "
+               f"· flow **{st.session_state.get('flow_state', 'Steady')}**")
 
 init(surge)
+if "engine" in st.session_state:
+    engine().degraded = degraded
 
 
+# ------------------------------------------------------------- assessment ---
 def tab_assessment() -> None:
-    """Blind nurse-first triage. ATRIA stays locked until the nurse commits."""
     eng = engine()
     if st.session_state.get("running", True):
         advance(int(st.session_state.get("speed", 2)))
     snap = eng.snapshot()
 
-    cols = st.columns(6)
-    for col, (label, value) in zip(cols, [
-        ("Waiting", snap["waiting"]),
-        ("In treatment", f'{snap["in_treatment"]}/{snap["slots"]}'),
-        ("Seen", snap["seen"]),
-        ("Escalated", snap["escalated"]),
-        ("Abstained", snap["abstained"]),
-        ("Clock", snap["now"][11:16]),
+    top = st.columns(6)
+    for col, (label, value, hint) in zip(top, [
+        ("Waiting", snap["waiting"], "Patients in the queue right now."),
+        ("In a bay", f'{snap["in_treatment"]}/{snap["slots"]}',
+         "Treatment spaces occupied. When one frees, the highest-priority "
+         "waiting patient is taken through."),
+        ("Seen", snap["seen"], "Treated and discharged this shift."),
+        ("Escalated", snap["escalated"],
+         "Times a machine raised someone's priority. It can never lower one."),
+        ("Abstained", snap["abstained"],
+         "Times ATRIA refused to score — too little data, or the picture fits "
+         "more than one pathway."),
+        ("Clock", snap["now"][11:16], "Simulated department time."),
     ]):
-        col.metric(label, value)
+        col.metric(label, value, help=hint)
 
     if snap["degraded"]:
-        st.error("**DEGRADED MODE** · model service unavailable · "
-                 "Layer 0 red-flag gate still active", icon="⚠️")
+        st.error("**Model service down.** Layer 0 is still gating on hard rules, "
+                 "offline. Every score drops to LOW confidence, because the thing "
+                 "that produced confidence is gone.", icon="⚠️")
 
     lanes = " &nbsp; ".join(f"{k} <b>{v}</b>" for k, v in snap["lanes"].items())
-    st.markdown(f'<div class="lanebar">{lanes} &nbsp;&nbsp;·&nbsp;&nbsp; '
-                f'scoring p95 <b>{snap["p95_ms"] or "–"} ms</b></div>',
-                unsafe_allow_html=True)
+    st.markdown(f'<div class="lanebar">{lanes} &nbsp;·&nbsp; scoring p95 '
+                f'<b>{snap["p95_ms"] or "–"} ms</b> &nbsp;·&nbsp; '
+                f'RESUS never queues behind anyone</div>', unsafe_allow_html=True)
 
-    queue_col, work_col, record_col = st.columns([1.25, 1.15, 0.95])
+    waiting = [r for r in snap["rows"] if r["state"] != "IN TREATMENT"]
+    sel_ticket = st.session_state.get("assess_pick")
+
+    queue_col, work_col, record_col = st.columns([1.15, 1.15, 1.0])
 
     with queue_col:
         st.markdown('<div class="atria-h">Attention queue</div>', unsafe_allow_html=True)
-        st.caption("Rank is not ESI. It is a live sequence; ESI is what the nurse signs.")
+        st.caption("Rank is **not** ESI. ESI is the acuity the nurse signs; rank is "
+                   "a live sequence that changes as people wait and worsen.")
         if not snap["rows"]:
             st.caption("Waiting for the first arrival…")
         for r in snap["rows"][:12]:
-            st.markdown(render_row(r), unsafe_allow_html=True)
+            st.markdown(render_row(r, selected=(r["ticket"] == sel_ticket)),
+                        unsafe_allow_html=True)
 
-    waiting = [r for r in snap["rows"] if r["state"] != "IN TREATMENT"]
+    if not waiting:
+        with work_col:
+            st.markdown('<div class="atria-h">Nurse assessment</div>',
+                        unsafe_allow_html=True)
+            st.caption("Nobody waiting.")
+        return
 
     with work_col:
         st.markdown('<div class="atria-h">Nurse assessment</div>', unsafe_allow_html=True)
-        if not waiting:
-            st.caption("Nobody waiting.")
-            return
-
         pick = st.selectbox("Patient", [r["ticket"] for r in waiting],
                             label_visibility="collapsed", key="assess_pick")
         row = next((r for r in waiting if r["ticket"] == pick), waiting[0])
@@ -276,93 +387,115 @@ def tab_assessment() -> None:
         a = eng.workflow.open(sid)
         view = a.visible_to_nurse()
 
-        age = f"{round(row['age'])}{row['gender'] or ''}" if row.get("age") is not None else "—"
-        st.markdown(f"**{row['complaint']}** · {age} · waited {row['waited']}m")
-
-        window = decision_window.seconds_for(
-            flow_state=st.session_state.get("flow_state", "Steady"),
-            esi=row["band"], age=row.get("age"))
-        st.caption(f"Decision window {window}s · expiry prompts and logs; "
-                   f"it never assigns an ESI.")
+        st.markdown(step_bar(view["stage"]), unsafe_allow_html=True)
 
         if not view["revealed"]:
-            st.info("ATRIA is locked. Choose an ESI first — the recommendation "
-                    "is not on this page until you do.", icon="🔒")
-            esi_cols = st.columns(5)
-            for i, col in enumerate(esi_cols, start=1):
-                if col.button(f"{i}", key=f"esi_{sid}_{i}", width='stretch',
-                              help=ESI_LABELS[i]):
+            st.markdown(
+                '<div class="locked"><b>ATRIA is locked.</b> Its recommendation is '
+                'not on this page — not hidden, <i>absent</i> — until you choose. '
+                'Show a clinician a number first and they converge on it; this is '
+                'the cheapest defence against that.</div>', unsafe_allow_html=True)
+            st.write("")
+            for i in range(1, 6):
+                if st.button(f"**{i}** · {ESI_LABELS[i]}", key=f"esi_{sid}_{i}",
+                             width='stretch', help=ESI_MEANING[i]):
                     eng.nurse_assess(sid, i)
                     eng.reveal(sid)
                     st.rerun(scope="fragment")
-            st.caption(" · ".join(f"{i} {ESI_LABELS[i]}" for i in range(1, 6)))
         else:
-            outcome = view.get("outcome")
-            c1, c2 = st.columns(2)
-            c1.metric("Nurse ESI", view["nurse_esi"])
-            c2.metric("ATRIA", view["atria_esi"] if view["atria_esi"] else "abstained")
+            atria = view["atria_esi"]
+            st.markdown(
+                f'<div class="cmp">'
+                f'<div class="c nurse"><div class="k">You</div>'
+                f'<div class="n">{view["nurse_esi"]}</div>'
+                f'<div class="l">{ESI_LABELS[view["nurse_esi"]]}</div></div>'
+                f'<div class="c"><div class="k">ATRIA</div>'
+                f'<div class="n">{atria if atria else "—"}</div>'
+                f'<div class="l">{ESI_LABELS[atria] if atria else "abstained"}</div></div>'
+                f'</div>', unsafe_allow_html=True)
 
+            outcome = view.get("outcome")
             if outcome == "match":
-                st.success("ESI match", icon="✅")
+                st.success("**You agree.** Confirm and move on.", icon="✅")
             elif outcome == "nurse_escalation":
-                st.warning("You are more urgent than ATRIA. Your view stands; "
-                           "the difference is logged. No reason required.", icon="⬆️")
+                st.warning("**You are more urgent than ATRIA.** Your view stands and "
+                           "no reason is required — a clinician escalating is never "
+                           "questioned. The difference is logged.", icon="⬆️")
             elif outcome == "nurse_downgrade":
-                st.warning("You are less urgent than ATRIA. A reason is required "
-                           "before sign-off.", icon="⬇️")
+                st.warning("**You are less urgent than ATRIA.** This is the direction "
+                           "that can harm someone, so it needs a reason before "
+                           "sign-off.", icon="⬇️")
             elif outcome == "guardrail":
-                st.error("Layer 0 critical guardrail is active. Going less urgent "
-                         "requires a reason and escalates to the charge nurse.", icon="🚨")
+                st.error("**A hard rule fired on recorded values.** Going less urgent "
+                         "needs a reason and escalates to the charge nurse. No model "
+                         "output can suppress this.", icon="🚨")
             elif outcome == "uncertain":
-                st.warning("ATRIA abstained — essential data missing. Complete the "
-                           "vital set, or give a reason to sign off regardless.", icon="❓")
+                st.warning("**ATRIA abstained** — essential data is missing, and it "
+                           "will not guess. Complete the vitals, or give a reason to "
+                           "sign off regardless.", icon="❓")
 
             reason = ""
             if view["needs_reason"]:
-                reason = st.selectbox("Reason", REASON_CODES, key=f"why_{sid}")
+                reason = st.selectbox(
+                    "Why?", list(REASON_LABELS), key=f"why_{sid}",
+                    format_func=lambda k: REASON_LABELS[k])
             label = ("Confirm & send inside" if view["nurse_esi"] <= 2
                      else "Confirm & advance")
-            if st.button(label, width='stretch', key=f"fin_{sid}"):
+            if st.button(label, width='stretch', key=f"fin_{sid}", type="primary"):
                 eng.finalise(sid, clinician="nurse.demo", reason_code=reason)
                 st.rerun(scope="fragment")
 
-        if st.button("Report change / worsening", width='stretch',
-                     key=f"worse_{sid}"):
+        st.write("")
+        if st.button("⟲ Report change / worsening", width='stretch', key=f"worse_{sid}"):
             eng.report_change(sid)
             st.rerun(scope="fragment")
-        st.caption("Reporting a change clears any sign-off and starts a fresh "
-                   "blind assessment. The old recommendation is discarded.")
+        st.caption("Clears the sign-off and starts a **fresh blind cycle**. The old "
+                   "recommendation is discarded — showing it would anchor the very "
+                   "decision this keeps independent.")
 
     with record_col:
         st.markdown('<div class="atria-h">Patient record</div>', unsafe_allow_html=True)
-        st.markdown(f"**{row['complaint']}**")
-        why = row["red_flag"] or " · ".join(row["reasons"]) or "—"
-        st.caption(why)
+        age = f"{round(row['age'])}{row['gender'] or ''}" if row.get("age") is not None else "—"
+        st.markdown(f"**{row['complaint']}** · {age} · waited {row['waited']}m")
+        st.markdown(render_vitals(row), unsafe_allow_html=True)
+
+        st.markdown('<div class="atria-h" style="margin-top:14px">Why this band</div>',
+                    unsafe_allow_html=True)
+        st.caption(row["red_flag"] or " · ".join(row["reasons"]) or "—")
         if row.get("pathway"):
-            st.caption(f"Pathway: {row['pathway']}")
+            st.caption(f"Pathway engaged: **{row['pathway']}** — which of the three "
+                       f"gates (lungs, heart, brain) is closing.")
         if row["missing"]:
-            st.warning(f"Missing: {', '.join(row['missing'])}", icon="⚠️")
+            st.warning(f"Never measured: {', '.join(row['missing'])}. A missing vital "
+                       f"is never read as a normal one.", icon="⚠️")
         if row.get("abstained"):
             st.error(row["abstain_reason"] or "system abstained", icon="⛔")
         for c in row.get("conflicts", []):
-            st.error(f"Treatment conflict · {c}", icon="⚡")
+            st.error(f"**Treatment conflict** — {c}", icon="⚡")
 
 
+# -------------------------------------------------------------- operations --
 def tab_operations() -> None:
-    """Demand against staffed capacity for the next hour."""
     eng = engine()
     snap = eng.snapshot()
 
-    st.markdown('<div class="atria-h">Staffing and connected systems</div>',
-                unsafe_allow_html=True)
-    left, right = st.columns([1, 1.4])
+    st.caption("Demand against **staffed capacity** for the next hour. This informs "
+               "ordering *within* an ESI band only — it can never move a patient "
+               "across one. A busy department does not make a sick patient less sick.")
+
+    left, right = st.columns([1, 1.5])
     with left:
-        nurses = st.slider("Nurses available", 1, 12, 6, key="ops_nurses")
-        spaces = st.slider("Physical treatment spaces", 4, 40, 20, key="ops_spaces")
-        st.markdown("**Connected systems**")
+        st.markdown('<div class="atria-h">Staffing</div>', unsafe_allow_html=True)
+        nurses = st.slider("Nurses on", 1, 12, 6, key="ops_nurses")
+        spaces = st.slider("Physical spaces", 4, 40, 20, key="ops_spaces",
+                           help="Rooms that physically exist. Capacity is the "
+                                "*lesser* of this and what your nurses can safely cover.")
+        st.markdown('<div class="atria-h" style="margin-top:12px">Connected systems</div>',
+                    unsafe_allow_html=True)
+        st.caption("Turn one off to see the forecast get *more* conservative, not less.")
         records = st.toggle("Records", value=True, key="ops_records")
-        beds = st.toggle("Beds / spaces", value=True, key="ops_beds")
-        roster = st.toggle("Staff roster", value=True, key="ops_roster")
+        beds = st.toggle("Beds", value=True, key="ops_beds")
+        roster = st.toggle("Roster", value=True, key="ops_roster")
         vitals = st.toggle("Vitals feed", value=True, key="ops_vitals")
 
     f = forecast.FlowInputs(
@@ -375,10 +508,15 @@ def tab_operations() -> None:
 
     with right:
         m = st.columns(4)
-        m[0].metric("Flow state", out.state)
-        m[1].metric("Open staffed spaces", out.open_spaces)
-        m[2].metric("Wait buffer", f"{out.wait_buffer_minutes:.0f}m")
-        m[3].metric("Arrivals / hour", out.arrivals_next_hour)
+        m[0].metric("Flow", out.state,
+                    help="Waiting patients against staffed capacity.")
+        m[1].metric("Open spaces", out.open_spaces,
+                    help="Staffed spaces free right now — physically available "
+                         "AND safely staffed. Not licensed beds.")
+        m[2].metric("Wait buffer", f"{out.wait_buffer_minutes:.0f}m",
+                    help="Median minutes before non-critical waiting patients "
+                         "cross the site threshold. A planning signal only.")
+        m[3].metric("Arrivals/hr", out.arrivals_next_hour)
         st.info(out.explanation, icon="📋")
         for note in out.assumptions:
             st.warning(note, icon="⚠️")
@@ -386,52 +524,65 @@ def tab_operations() -> None:
     import pandas as pd
     chart = pd.DataFrame({
         "minutes from now": [p.minute for p in out.points],
-        "In treatment": [p.in_treatment for p in out.points],
+        "In a bay": [p.in_treatment for p in out.points],
         "Waiting": [p.waiting for p in out.points],
-        "Staffed spaces": [out.staffed_spaces] * len(out.points),
+        "Staffed capacity": [out.staffed_spaces] * len(out.points),
     }).set_index("minutes from now")
-    st.line_chart(chart, color=["#45C4B2", "#E8903F", "#E5766A"], height=280)
-    st.caption("In treatment is capped at staffed spaces — you cannot treat more "
-               "people than you have staffed places for. Waiting is not capped, "
-               "because a queue can grow past capacity, and hiding that would "
-               "hide the one thing worth seeing. A staffed space is physically "
-               "available *and* safely staffed; it is not a licensed bed.")
-    st.caption("This informs ordering within an ESI band only. It can never move "
-               "a patient across one.")
+    st.line_chart(chart, color=["#45C4B2", "#E8903F", "#E5766A"], height=270)
+
+    a, b = st.columns(2)
+    a.caption("**Why the green line flattens.** Treatment is capped at staffed "
+              "spaces — you cannot treat more people than you have staffed places "
+              "for, and a chart that let it climb would be lying.")
+    b.caption("**Why the orange line can climb past it.** A queue *can* grow beyond "
+              "capacity. Hiding that would hide the single condition most worth "
+              "seeing.")
 
 
+# ----------------------------------------------------------------- history --
 def tab_history() -> None:
-    """Audit log first, general log second."""
     eng = engine()
     intact, note = eng.audit.verify()
-    st.markdown('<div class="atria-h">Audit log</div>', unsafe_allow_html=True)
-    st.caption(f"{'✅' if intact else '❌'} {note}")
 
-    mode = st.radio("View", ["Audit log", "General log"], horizontal=True,
+    c1, c2 = st.columns([1, 2])
+    c1.metric("Chain", "intact" if intact else "BROKEN",
+              help="Each entry embeds the hash of the one before it. Edit or "
+                   "delete anything and this breaks.")
+    c2.caption(f"{note}. Append-only: a correction creates a new linked event, "
+               f"it never rewrites an old one. This is what makes a clinical "
+               f"decision reconstructable months later.")
+
+    mode = st.radio("View", ["Decisions", "Everything"], horizontal=True,
                     label_visibility="collapsed", key="hist_mode")
+    st.caption("**Decisions** shows only what a human or the model decided — the "
+               "audit trail proper. **Everything** adds arrivals, escalations and "
+               "movements in time order.")
+
     decision_kinds = {"nurse_assessment", "atria_reveal", "sign_off",
                       "override", "worsening_reported", "abstain"}
+    friendly = {"nurse_assessment": "nurse chose (blind)",
+                "atria_reveal": "ATRIA revealed", "sign_off": "signed off",
+                "override": "override", "worsening_reported": "change reported",
+                "abstain": "refused to score", "arrival": "arrived",
+                "escalation": "escalated", "seen": "taken through",
+                "departure": "left"}
 
     rows = []
     for e in reversed(eng.audit.entries):
-        if mode == "Audit log" and e.kind not in decision_kinds:
+        if mode == "Decisions" and e.kind not in decision_kinds:
             continue
         rows.append({
-            "seq": e.seq, "at": str(e.at)[11:19], "event": e.kind,
-            "stay": e.stay_id,
+            "#": e.seq, "time": str(e.at)[11:19],
+            "event": friendly.get(e.kind, e.kind), "stay": e.stay_id,
             "detail": ", ".join(f"{k}={v}" for k, v in e.payload.items()
-                                if v not in (None, "", [], False))[:90],
-            "hash": e.hash[:10], "prev": e.prev_hash[:10],
+                                if v not in (None, "", [], False))[:80],
+            "hash": e.hash[:8], "links to": e.prev_hash[:8],
         })
     if rows:
         import pandas as pd
-        st.dataframe(pd.DataFrame(rows), width='stretch', height=420,
-                     hide_index=True)
+        st.dataframe(pd.DataFrame(rows), width='stretch', height=430, hide_index=True)
     else:
-        st.caption("No events yet.")
-    st.caption("Append-only. Each entry embeds the hash of the one before it, so "
-               "an edit or deletion anywhere breaks the chain and is detectable. "
-               "Corrections create a new linked event; nothing is ever rewritten.")
+        st.caption("No events yet — let the shift run for a moment.")
 
 
 @st.fragment(run_every=2)
@@ -439,12 +590,12 @@ def board() -> None:
     """
     The board, redrawn on a timer.
 
-    The refresh has to live here, on the thing being redrawn. An empty fragment
-    calling st.rerun() loops forever without ever finishing the script, which
-    renders as a permanently blank page.
+    The refresh lives here, on the thing being redrawn. An empty fragment calling
+    st.rerun() loops forever without finishing the script, which renders as a
+    permanently blank page.
     """
     assessment, operations, history = st.tabs(
-        ["Assessment", "Operations & Flow", "History"])
+        ["  Assessment  ", "  Operations & Flow  ", "  History  "])
     with assessment:
         tab_assessment()
     with operations:

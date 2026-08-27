@@ -76,6 +76,8 @@ class Patient:
     seen_at: pd.Timestamp | None = None
     leaves_at: pd.Timestamp | None = None
     seen_at_band: int | None = None
+    #: latest recorded vitals, for the record panel
+    vitals: dict = field(default_factory=dict)
     #: RF11/RF12 — the system declined to rank this patient
     abstained: bool = False
     worsening: bool = False
@@ -93,6 +95,7 @@ class Patient:
             band=self.band, band_before=self.band_before,
             state="IN TREATMENT" if self.seen_at is not None else self.state,
             lane=lane_for(self.band), abstained=self.abstained,
+            vitals=dict(self.vitals),
             worsening=self.worsening,
             abstain_reason=self.abstain_reason,
             diagnostic_confidence=self.diagnostic_confidence,
@@ -207,6 +210,8 @@ class QueueEngine:
             patient.confidence = "LOW"
             patient.reasons = ("degraded mode — Layer 0 only",)
 
+        patient.vitals = {k: v for k, v in vitals.items() if k in
+                          ("heartrate", "sbp", "o2sat", "resprate", "temperature")}
         patient.band = band
         if patient.red_flag or band == 1 or patient.abstained:
             patient.state = "AWAITING"
@@ -230,6 +235,10 @@ class QueueEngine:
         if patient is None:
             return None
         patient.history.append(e.payload)
+        for k in ("heartrate", "sbp", "o2sat", "resprate", "temperature"):
+            latest = _num(e.payload.get(k))
+            if latest is not None:
+                patient.vitals[k] = latest
 
         if self.degraded:
             g = gate({k: _num(e.payload.get(k)) for k in
