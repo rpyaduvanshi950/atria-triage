@@ -113,6 +113,20 @@ def _session_is_stale() -> bool:
     return any(not hasattr(engine, a) for a in REQUIRED_ENGINE_ATTRS)
 
 
+def engine() -> QueueEngine:
+    """
+    The only way to reach the engine.
+
+    Every read validates, because `board()` is a fragment: fragments rerun
+    *without re-executing the module*, so a guard placed in the script body is
+    simply never reached on the reruns that matter. That is what made the first
+    attempt at this fix useless — it ran once at startup and never again.
+    """
+    if _session_is_stale():
+        init(st.session_state.get("surge", 1.0))
+    return st.session_state.engine
+
+
 def init(surge: float) -> None:
     if not _session_is_stale():
         return
@@ -128,7 +142,7 @@ def init(surge: float) -> None:
 
 
 def advance(step: int) -> None:
-    eng, events = st.session_state.engine, st.session_state.events
+    eng, events = engine(), st.session_state.events
     cur = st.session_state.cursor
     for e in events[cur:cur + step]:
         eng.on_arrival(e) if e.kind == "arrival" else eng.on_vitals(e)
@@ -194,7 +208,7 @@ with st.sidebar:
     degraded = st.toggle("Kill the model service", value=False,
                          help="Scenario 06 — Layer 0 keeps gating deterministically.")
     st.session_state.degraded = degraded
-    if "engine" in st.session_state:
+    if "engine" in st.session_state and not _session_is_stale():
         st.session_state.engine.degraded = degraded
 
     if st.button("Restart the shift", width='stretch'):
@@ -212,10 +226,10 @@ init(surge)
 
 def tab_assessment() -> None:
     """Blind nurse-first triage. ATRIA stays locked until the nurse commits."""
-    engine = st.session_state.engine
+    eng = engine()
     if st.session_state.get("running", True):
         advance(int(st.session_state.get("speed", 2)))
-    snap = engine.snapshot()
+    snap = eng.snapshot()
 
     cols = st.columns(6)
     for col, (label, value) in zip(cols, [
@@ -259,7 +273,7 @@ def tab_assessment() -> None:
                             label_visibility="collapsed", key="assess_pick")
         row = next((r for r in waiting if r["ticket"] == pick), waiting[0])
         sid = row["stay_id"]
-        a = engine.workflow.open(sid)
+        a = eng.workflow.open(sid)
         view = a.visible_to_nurse()
 
         age = f"{round(row['age'])}{row['gender'] or ''}" if row.get("age") is not None else "—"
@@ -278,8 +292,8 @@ def tab_assessment() -> None:
             for i, col in enumerate(esi_cols, start=1):
                 if col.button(f"{i}", key=f"esi_{sid}_{i}", width='stretch',
                               help=ESI_LABELS[i]):
-                    engine.nurse_assess(sid, i)
-                    engine.reveal(sid)
+                    eng.nurse_assess(sid, i)
+                    eng.reveal(sid)
                     st.rerun(scope="fragment")
             st.caption(" · ".join(f"{i} {ESI_LABELS[i]}" for i in range(1, 6)))
         else:
@@ -309,12 +323,12 @@ def tab_assessment() -> None:
             label = ("Confirm & send inside" if view["nurse_esi"] <= 2
                      else "Confirm & advance")
             if st.button(label, width='stretch', key=f"fin_{sid}"):
-                engine.finalise(sid, clinician="nurse.demo", reason_code=reason)
+                eng.finalise(sid, clinician="nurse.demo", reason_code=reason)
                 st.rerun(scope="fragment")
 
         if st.button("Report change / worsening", width='stretch',
                      key=f"worse_{sid}"):
-            engine.report_change(sid)
+            eng.report_change(sid)
             st.rerun(scope="fragment")
         st.caption("Reporting a change clears any sign-off and starts a fresh "
                    "blind assessment. The old recommendation is discarded.")
@@ -336,8 +350,8 @@ def tab_assessment() -> None:
 
 def tab_operations() -> None:
     """Demand against staffed capacity for the next hour."""
-    engine = st.session_state.engine
-    snap = engine.snapshot()
+    eng = engine()
+    snap = eng.snapshot()
 
     st.markdown('<div class="atria-h">Staffing and connected systems</div>',
                 unsafe_allow_html=True)
@@ -388,8 +402,8 @@ def tab_operations() -> None:
 
 def tab_history() -> None:
     """Audit log first, general log second."""
-    engine = st.session_state.engine
-    intact, note = engine.audit.verify()
+    eng = engine()
+    intact, note = eng.audit.verify()
     st.markdown('<div class="atria-h">Audit log</div>', unsafe_allow_html=True)
     st.caption(f"{'✅' if intact else '❌'} {note}")
 
@@ -399,7 +413,7 @@ def tab_history() -> None:
                       "override", "worsening_reported", "abstain"}
 
     rows = []
-    for e in reversed(engine.audit.entries):
+    for e in reversed(eng.audit.entries):
         if mode == "Audit log" and e.kind not in decision_kinds:
             continue
         rows.append({

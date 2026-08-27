@@ -245,6 +245,23 @@ def test_a_fresh_engine_has_everything_the_ui_reads():
     assert not missing, f"engine is missing {missing}"
 
 
+def test_every_engine_read_in_the_app_goes_through_the_guard():
+    """
+    board() is a fragment, and fragments rerun without re-executing the module.
+    A staleness check in the script body is therefore never reached on the
+    reruns that matter — which is exactly how the first fix for this failed.
+    Every read must go through engine(), which validates each time.
+    """
+    import re
+    src = open("streamlit_app.py").read()
+    body = src.split("def engine()", 1)[1]
+    direct = [ln.strip() for ln in body.splitlines()
+              if "st.session_state.engine" in ln
+              and "_session_is_stale" not in ln
+              and not ln.strip().startswith("#")]
+    assert not direct, f"engine read without validating: {direct}"
+
+
 def test_the_streamlit_app_lists_the_attributes_it_depends_on():
     import re
     src = open("streamlit_app.py").read()
