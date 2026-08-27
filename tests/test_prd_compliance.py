@@ -254,10 +254,10 @@ def test_every_engine_read_in_the_app_goes_through_the_guard():
     """
     import re
     src = open("streamlit_app.py").read()
-    body = src.split("def engine()", 1)[1]
-    direct = [ln.strip() for ln in body.splitlines()
+    # everything after the accessor's own body must go through engine()
+    after_accessor = src.split("def init(", 1)[1]
+    direct = [ln.strip() for ln in after_accessor.splitlines()
               if "st.session_state.engine" in ln
-              and "_session_is_stale" not in ln
               and not ln.strip().startswith("#")]
     assert not direct, f"engine read without validating: {direct}"
 

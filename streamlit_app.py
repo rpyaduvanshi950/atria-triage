@@ -208,8 +208,8 @@ with st.sidebar:
     degraded = st.toggle("Kill the model service", value=False,
                          help="Scenario 06 — Layer 0 keeps gating deterministically.")
     st.session_state.degraded = degraded
-    if "engine" in st.session_state and not _session_is_stale():
-        st.session_state.engine.degraded = degraded
+    if "engine" in st.session_state:
+        engine().degraded = degraded
 
     if st.button("Restart the shift", width='stretch'):
         st.session_state.shift_seed = st.session_state.get("shift_seed", 21) + 1
