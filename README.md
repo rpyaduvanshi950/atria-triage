@@ -55,6 +55,12 @@ Four layers, each with a different amount of authority:
 | **Layer 2** | `layer2/` | Re-ranks from vital trajectories inside strict safety bands | *Re-orders* |
 | **Layer 3** | `layer3/` | Blind assessment workflow + hash-chained audit log | **Decides** |
 
+**Only Layer 1 contains a trained model.** Layers 0, 2 and 3 are entirely
+deterministic — cited thresholds, arithmetic on vital deltas, and a state
+machine. That is a design choice, not a gap: the parts that can force a patient
+to the top of the queue, or refuse to answer, or record what a clinician did,
+should be inspectable line by line rather than learned.
+
 The learned model can never suppress Layer 0, and no machine source can lower a
 priority. Both are enforced by tests, not by convention.
 
@@ -266,6 +272,7 @@ pitch. The scorer trains once per container behind `@st.cache_resource`.
 | [`docs/business-proposal.md`](docs/business-proposal.md) | Problem framing, users, roadmap, risks |
 | [`docs/regulatory.md`](docs/regulatory.md) | Jurisdiction, SaMD class, liability, consent, bias |
 | [`docs/deck-changes.md`](docs/deck-changes.md) | What to fix in the pitch deck |
+| [`docs/nextjs-migration.md`](docs/nextjs-migration.md) | Plan for rebuilding the interface in Next.js, after the pitch |
 | [`dashboard/NOTES.md`](dashboard/NOTES.md) | Nurse board design decisions |
 | [`docsfromsatyansh/ATRIA PRD.pdf`](docsfromsatyansh) | The 55-page product spec this build is aligned to |
 
