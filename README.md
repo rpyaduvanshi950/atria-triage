@@ -133,12 +133,12 @@ A working end-to-end prototype, not a notebook.
 | Layer 1 vs the published benchmark | **AUC 0.809** on 560,486 real Yale encounters, PRD-compliant features only — the benchmark's 0.87 uses the nurse's ESI and race, both of which the PRD forbids |
 | The price of independence | 0.859 with the nurse's ESI, 0.809 without. That ~0.05 is what it costs to produce a recommendation that can genuinely disagree with the nurse |
 | Cross-site generalisation | Train on two hospitals, test on the third: unseen-site AUC within ±0.026 |
-| Racial disparity, found and closed | "Other" patients undertriaged at 11.4% against 3.1% for White; gap cut 11.2% → 5.0% |
+| Racial disparity, found and narrowed | "Other" undertriaged at 9.2% against 4.0% for White. Removing race from the model cut the gap 8.3 → 5.2 points on its own; calibration took it to 5.0% |
 | Layer 2 on 159 real MIMIC trajectories | 32.2% of admitted flagged vs 12.2% of discharged, median 164 min lead |
 | Conformal coverage                     | >=95% per class, calibrated on held-out data                                          |
 | Latency, p95                           | 41 ms at 3x surge, against a 400 ms budget                                            |
 | Missingness audit                      | HR, RR and SBP absences were read as*reassuring*; now clamped                       |
-| Fairness, age | adults undertriaged at 9.2% against 1.0% for geriatric; gap closed 8.2% → 0.0% |
+| Fairness, age | adults undertriaged at 9.8% against geriatric; TPR gap 9.3 points, mitigated to 5.0% |
 
 Every figure above is produced by `make report`, which writes
 [`docs/results.md`](docs/results.md) and the deck figures. Nothing is typed by

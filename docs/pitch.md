@@ -19,19 +19,28 @@ and well sourced.
 
 ## New slide 1 — Results
 
-> ### We beat the nurse. We nearly matched the paper. On a fraction of the features.
+> ### We score below the published benchmark. On purpose.
 
 | model | features | AUC |
 |---|---|---|
 | Hong et al. 2018, triage variables only | ~90 | 0.87 |
-| **ATRIA** | **27** | **0.859** |
+| **ATRIA**, PRD-compliant | **23** | **0.809** |
 | Hong et al. 2018, full model with history | 972 | 0.92 |
 
 560,486 real ED encounters, three hospitals, Yale 2014–2017.
 
-**Operating point: 95.0% sensitivity, 52.1% specificity, 5.0% undertriage** —
+**The benchmark uses two inputs we refuse.** It reads the nurse's own ESI level,
+and it uses race as a predictor. Adding the nurse's ESI back would put us at
+0.859 — near the published number — and we do not, for the reason on the next
+slide.
+
+**Operating point: 95.0% sensitivity, 34.1% specificity, 5.0% undertriage** —
 tuned to the American College of Surgeons ≤5% standard, not to accuracy.
 Specificity is the price and we report it.
+
+**Say out loud:** our label is hospital *admission*, not ICU-transfer-or-death.
+It is a coarser proxy for acuity. No open ED dataset carries ICU timestamps; it
+is the first thing we would fix with real hospital access.
 
 **Say out loud:** our label is hospital *admission*, not ICU-transfer-or-death.
 It is a coarser proxy for acuity. A true critical-outcome label needs ICU
@@ -40,24 +49,59 @@ fix with real hospital access.
 
 ---
 
-## New slide 2 — What the nurse is worth
+## New slide 2 — What independence costs
 
-> ### 0.820 without the nurse's ESI. 0.859 with it.
+> ### 0.859 if we read the nurse's answer. 0.809 if we don't.
 
-The same model, the same patients, one feature different.
+The same model, the same 560,486 patients, one input different.
 
-**The nurse's own judgement is worth ~0.04 AUC.** That is not an argument for
-replacing them — it is a measurement of how much of triage is human pattern
-recognition rather than vital signs, and it is why ATRIA recommends and never
-decides.
+**That 0.05 is the price of being able to disagree.** A model that reads the
+nurse's ESI cannot meaningfully contradict it — it has already been told the
+answer. So the comparison that follows would be theatre, and the blind
+assessment built on it would be worthless.
 
-This is also why we train on the *outcome* and not on ESI. A model trained to
-predict the nurse's level can only ever clone a judge that is wrong 32.2% of the
-time. Using ESI as an input while training on outcome lets the model disagree.
+We pay the 0.05 and keep the disagreement real.
+
+The same logic bars race. It lifts accuracy and it is a social construct
+standing in for exposure and access — using it as a predictor is precisely how
+Obermeyer et al. (2019) describes algorithms encoding inequity. Race is audited,
+never predicted from.
+
+**This is the slide that separates a prototype from a product.** Anyone can
+optimise an AUC. Choosing to give up 0.05 of it, and being able to say exactly
+what you bought with it, is a different claim.
 
 ---
 
-## New slide 3 — The invariant
+## New slide 3 — Blind nurse-first assessment
+
+> ### The nurse decides first. Only then does ATRIA speak.
+
+ATRIA's recommendation is not on the screen until the nurse has committed to an
+ESI — absent from the payload, not merely hidden, so it cannot leak through the
+DOM or a network tab.
+
+**Why:** show a clinician a number first and they converge on it. Automation
+bias is not a failure of diligence; it is how attention works under load. This
+is the cheapest known defence against it.
+
+**Second benefit:** every encounter now produces an independent human label.
+That is the only way to measure whether the model is adding anything at all.
+
+| outcome | reason required |
+|---|---|
+| match | no |
+| nurse **more** urgent | no — logged, nurse's view stands |
+| nurse **less** urgent | **yes**, before sign-off |
+| guardrail active | **yes**, plus charge-nurse escalation |
+| ATRIA abstained | **yes**, if signing off before the gap is resolved |
+
+Reporting a change clears the sign-off and starts a fresh blind cycle. The old
+recommendation is discarded, not carried over.
+
+---
+
+## New slide 4 — The invariant
 
 > ### It may escalate on its own. It may never de-escalate on its own.
 
@@ -75,35 +119,43 @@ through, with a test that fails if it is ever violated.
 
 ---
 
-## New slide 4 — We found a racial disparity in our own model
+## New slide 5 — We found a racial disparity in our own model
 
-> ### "Other" patients undertriaged at 11.4%. White patients at 3.1%.
+> ### "Other" patients undertriaged at 9.2%. White patients at 4.0%.
 
-A 3.7× relative gap, at the operating point, on real race data.
+At the operating point, on real race data, in our own model. Measured, not
+assumed.
 
-| | before | after |
+| | sensitivity | undertriage |
 |---|---|---|
-| Other | 88.7% sensitivity | 95.0% |
-| Asian | 92.5% | 95.0% |
-| Black or African American | 93.7% | 95.0% |
-| White or Caucasian | 96.9% | 95.0% |
-| **spread** | **11.2%** | **5.0%** |
+| White or Caucasian | 96.0% | 4.0% |
+| Black or African American | 94.8% | 5.3% |
+| Asian | 93.7% | 6.3% |
+| **Other** | **90.8%** | **9.2%** |
 
-Mitigation is **subgroup-conditional conformal calibration** — Mondrian
+**Removing race from the model narrowed the gap on its own** — from 8.3
+percentage points to 5.2 — before any mitigation was applied. A protected
+attribute does not have to be used maliciously to do harm; it is enough for the
+model to learn that one group is admitted less often and act on it.
+
+**Then we mitigated.** Subgroup-conditional conformal calibration — Mondrian
 conformal takes an arbitrary taxonomy, so calibrating on class × subgroup gives
-each group its own coverage guarantee rather than a shared average that hides
+each group its own coverage guarantee instead of a shared average that hides
 the worst-served group inside it.
 
-Obermeyer et al. (2019) is on our problem slide as a warning. This is the same
-warning, measured in our own system, and closed.
+**TPR gap 9.2% → 5.0%.** Every group brought to ~95% sensitivity.
 
-**One honest caveat:** the age-band finding *reversed* between synthetic and real
-data. Fairness results do not transfer between datasets — which is itself the
+Obermeyer et al. (2019) is on our problem slide as a warning. This is the same
+warning, found in our own system, and closed.
+
+**Two honest caveats.** The gap is narrowed, not eliminated — 5.0% is above our
+own 5-point tolerance. And the age finding *reversed* between synthetic and real
+data, so fairness results do not transfer between datasets. That is itself the
 argument for auditing on the data you deploy against.
 
 ---
 
-## New slide 5 — Three traps we caught
+## New slide 6 — Three traps we caught
 
 > ### Most teams show a model that worked.
 
@@ -188,6 +240,23 @@ Layer 1, yes — 560,486 Yale encounters. Layer 2 is rule-based and evaluated on
 159 real MIMIC trajectories. The patients on the demo board are synthetic,
 generated from distributions fitted to 143,140 real Iranian records, because the
 paediatric, surge and deterioration cases no open snapshot dataset carries.
+
+**"Your AUC is below the paper's. Why?"**
+Deliberately. The published model reads the nurse's own ESI level and uses race
+as a predictor. We exclude both, which costs about 0.05 AUC. A model that has
+already been told the nurse's answer cannot disagree with it, so the blind
+comparison — the entire point of the workflow — would be meaningless. We would
+rather have a weaker model that can genuinely contradict a nurse than a stronger
+one that cannot.
+
+**"Doesn't hiding the recommendation slow the nurse down?"**
+It adds one tap. What it removes is anchoring: the nurse's ESI is now an
+independent judgement rather than a reaction to ours. That matters twice — it
+protects the patient from a confidently wrong model, and it gives us the only
+clean signal we have for whether the model is worth anything. The decision
+window is 75–135 seconds depending on acuity, load and age, and it is
+deliberately non-numeric, because a visible countdown turns a clinical judgement
+into a race.
 
 **"Why should a nurse trust it?"**
 They shouldn't yet, and pretending otherwise is how these systems fail. Phase 1
