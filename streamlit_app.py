@@ -94,13 +94,37 @@ def new_shift(surge: float) -> None:
     st.session_state.missing_rate = rate
 
 
+#: Bump when the engine's shape changes. Session state outlives a code deploy —
+#: Streamlit Cloud pulls new code and reruns, but anything already in
+#: st.session_state was built by the *previous* version and keeps its old shape.
+SESSION_VERSION = "2026-08-27.blind-workflow"
+
+#: Attributes the current code expects an engine to have. Checked directly, so a
+#: forgotten version bump self-heals instead of crashing every open session.
+REQUIRED_ENGINE_ATTRS = ("workflow", "audit", "in_treatment", "ticker")
+
+
+def _session_is_stale() -> bool:
+    engine = st.session_state.get("engine")
+    if engine is None:
+        return True
+    if st.session_state.get("_session_version") != SESSION_VERSION:
+        return True
+    return any(not hasattr(engine, a) for a in REQUIRED_ENGINE_ATTRS)
+
+
 def init(surge: float) -> None:
-    if "engine" not in st.session_state:
-        st.session_state.shift_seed = 21
-        new_shift(surge)
-        # warm start: a board that opens empty looks broken, and the first
-        # arrivals carry no history for Layer 2 to reason about yet
-        advance(90)
+    if not _session_is_stale():
+        return
+    # rebuild from scratch; keep sidebar widget values, drop everything derived
+    for key in ("engine", "events", "cursor", "missing_rate"):
+        st.session_state.pop(key, None)
+    st.session_state.shift_seed = 21
+    st.session_state._session_version = SESSION_VERSION
+    new_shift(surge)
+    # warm start: a board that opens empty looks broken, and the first
+    # arrivals carry no history for Layer 2 to reason about yet
+    advance(90)
 
 
 def advance(step: int) -> None:

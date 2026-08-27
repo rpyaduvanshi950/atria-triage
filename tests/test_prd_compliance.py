@@ -228,3 +228,29 @@ def test_a_recorded_vital_carries_loinc_and_units():
 
 def test_the_recommendation_is_not_exported_as_a_clinical_finding_by_default():
     assert "governance review required" in fhir.RESOURCE_MAP["assessment output"]
+
+
+# --- deployment: session state outlives a code deploy ------------------------
+
+def test_a_fresh_engine_has_everything_the_ui_reads():
+    """
+    Streamlit Cloud pulls new code and reruns, but st.session_state keeps the
+    objects the *previous* version built. The app detects that by checking these
+    attributes directly, so this test is what stops the check going stale.
+    """
+    required = ("workflow", "audit", "in_treatment", "ticker", "patients",
+                "seen", "latencies", "degraded", "slots")
+    engine = QueueEngine(AcuityScorer().fit(generate(600, seed=3)), slots=3)
+    missing = [a for a in required if not hasattr(engine, a)]
+    assert not missing, f"engine is missing {missing}"
+
+
+def test_the_streamlit_app_lists_the_attributes_it_depends_on():
+    import re
+    src = open("streamlit_app.py").read()
+    declared = set(re.findall(r'REQUIRED_ENGINE_ATTRS = \(([^)]*)\)', src)[0]
+                   .replace('"', "").replace("'", "").split(", "))
+    declared = {d.strip() for d in declared if d.strip()}
+    engine = QueueEngine(AcuityScorer().fit(generate(600, seed=3)), slots=0)
+    for attr in declared:
+        assert hasattr(engine, attr), f"app expects engine.{attr}, which does not exist"
