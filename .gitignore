@@ -25,3 +25,10 @@ test.md
 
 # voice notes — personal recordings, not deliverables
 docsfromsatyansh/*.ogg
+
+# --- Next.js client ---------------------------------------------------------
+atria-web/node_modules/
+atria-web/.next/
+atria-web/out/
+atria-web/.env*.local
+atria-web/next-env.d.ts

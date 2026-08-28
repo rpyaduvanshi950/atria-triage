@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 from data.loaders.synthetic import generate
@@ -22,7 +24,21 @@ from layer3.workflow import BlindAssessmentError
 DASHBOARD = Path("dashboard/index.html")
 GUIDE = Path("dashboard/guide.html")
 
-app = FastAPI(title="ATRIA")
+app = FastAPI(title="ATRIA", version="0.2.0")
+
+# The Next.js client is served from a different origin in development and from
+# Vercel in production. Origins are listed rather than wildcarded: this API
+# mutates clinical state, so it should never accept a cross-origin write from
+# somewhere nobody has named.
+ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get(
+        "ATRIA_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000").split(",") if o.strip()
+]
+app.add_middleware(
+    CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True,
+    allow_methods=["GET", "POST"], allow_headers=["*"],
+)
 engine = QueueEngine()
 clients: set[WebSocket] = set()
 

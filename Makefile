@@ -8,6 +8,7 @@ help:
 	@echo "  make test-all      everything, including figure and report generation"
 	@echo "  make demo          start the live board on :8000 (FastAPI)"
 	@echo "  make streamlit     start the Streamlit board on :8501"
+	@echo "  make web           start the Next.js client on :3000 (needs make demo too)"
 	@echo "  make status        show which data sources are ready"
 	@echo "  make scenarios     run the six demo scenarios"
 	@echo "  make eval          latency, cross-site and Layer 2 lead time"
@@ -32,6 +33,10 @@ demo:
 
 streamlit:
 	.venv/bin/streamlit run streamlit_app.py
+
+web:
+	@test -d atria-web/node_modules || (cd atria-web && npm install)
+	cd atria-web && npm run dev
 
 scenarios:
 	.venv/bin/python -m scenarios.run

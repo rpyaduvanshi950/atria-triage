@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ground: #0d1513;
+  --color-surface: #15201e;
+  --color-surface2: #1d2b28;
+  --color-rule: #26352f;
+  --color-ink: #e7edea;
+  --color-ink2: #98a9a5;
+  --color-ink3: #72837f;
+  --color-accent: #45c4b2;
+  --color-signal: #e8903f;
+  --color-critical: #e5766a;
+  --font-mono: ui-monospace, Menlo, "SF Mono", monospace;
+}
+
+html, body { background: var(--color-ground); color: var(--color-ink); }
+body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+
+.mono { font-family: var(--font-mono); }
+
+/* Focus is always visible. A triage board is operated under load, sometimes
+   without a mouse, and an invisible focus ring makes that impossible. */
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

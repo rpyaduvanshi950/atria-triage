@@ -23,10 +23,11 @@ make streamlit      # the board at http://localhost:8501
 Give it about ten seconds — the acuity scorer trains on startup, so the board
 reads *"waiting for the first arrival…"* until it finishes. That is not a hang.
 
-Two other entry points:
+Three other entry points:
 
 ```bash
-make demo           # the FastAPI build at http://127.0.0.1:8000
+make demo           # the FastAPI engine at http://127.0.0.1:8000
+make web            # the Next.js client at http://localhost:3000 (needs make demo)
 make scenarios      # seven deterministic demo cases, printed
 ```
 
@@ -217,6 +218,7 @@ layer3/        workflow (blind assessment) · audit (hash-chained log)
 service/       queue · clock · forecast · decision_window · fhir · app (FastAPI)
 dashboard/     index.html (the board) · guide.html (served at /guide) · NOTES.md
 streamlit_app.py   three tabs: Assessment · Operations & Flow · History
+atria-web/     Next.js client — typed, virtualisable, keyboard-first
 eval/          fairness · cross_site · lead_time · latency · figures · report
 scenarios/     seven seeded demo cases + runner
 tests/         156 tests across 13 files
@@ -231,7 +233,8 @@ Makefile       every command
 | Command | Does |
 |---|---|
 | `make setup` | venv and dependencies |
-| `make streamlit` | the board on :8501 |
+| `make streamlit` | the Streamlit board on :8501 |
+| `make web` | the Next.js client on :3000 (run `make demo` alongside) |
 | `make demo` | the FastAPI build on :8000 |
 | `make scenarios` | seven deterministic demo cases |
 | `make test` | 156 tests |
@@ -272,7 +275,8 @@ pitch. The scorer trains once per container behind `@st.cache_resource`.
 | [`docs/business-proposal.md`](docs/business-proposal.md) | Problem framing, users, roadmap, risks |
 | [`docs/regulatory.md`](docs/regulatory.md) | Jurisdiction, SaMD class, liability, consent, bias |
 | [`docs/deck-changes.md`](docs/deck-changes.md) | What to fix in the pitch deck |
-| [`docs/nextjs-migration.md`](docs/nextjs-migration.md) | Plan for rebuilding the interface in Next.js, after the pitch |
+| [`docs/nextjs-migration.md`](docs/nextjs-migration.md) | The migration plan; phases 1–4 are built, phase 5 is not |
+| [`atria-web/README.md`](atria-web/README.md) | The Next.js client and the two rules for working on it |
 | [`dashboard/NOTES.md`](dashboard/NOTES.md) | Nurse board design decisions |
 | [`docsfromsatyansh/ATRIA PRD.pdf`](docsfromsatyansh) | The 55-page product spec this build is aligned to |
 

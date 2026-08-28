@@ -342,3 +342,59 @@ def test_reruns_fall_back_when_fragment_scope_is_illegal():
     after = src.split("def act(", 1)[1]
     assert 'st.rerun(scope="fragment")' not in after, \
         "call refresh() rather than scoping a rerun directly"
+
+
+# --- the blind guarantee holds over HTTP, not just in Python -----------------
+
+def test_the_api_never_sends_a_recommendation_before_the_nurse_commits():
+    """
+    The Next.js client cannot leak what it is never sent. That is why the guard
+    lives on the server: a field hidden in a browser is one devtools panel away
+    from being visible, but an absent field is absent.
+    """
+    from fastapi.testclient import TestClient
+    import service.app as app_module
+
+    # The startup task clears the engine and replays a shift on a timer. Both
+    # would make this test flaky, so it is stubbed and the queue seeded directly.
+    async def _no_replay(*_a, **_kw):
+        return None
+
+    original = app_module._replay
+    app_module._replay = _no_replay
+    try:
+        with TestClient(app_module.app) as client:
+            engine = app_module.engine
+            engine.scorer = engine.scorer or AcuityScorer().fit(generate(600, seed=3))
+            engine.slots = 0
+            for e in build_events(generate(10, seed=5)):
+                engine.on_arrival(e) if e.kind == "arrival" else engine.on_vitals(e)
+            _assert_blind_over_http(client, engine)
+    finally:
+        app_module._replay = original
+
+
+def _assert_blind_over_http(client, engine) -> None:
+    rows = client.get("/v1/queue").json()["rows"]
+    waiting = [r for r in rows if r["state"] != "IN TREATMENT"]
+    assert waiting, "seeding failed"
+    sid = waiting[0]["stay_id"]
+
+    early = client.post(f"/v1/assessments/{sid}/reveal")
+    assert early.status_code == 409
+
+    blind = client.post(f"/v1/encounters/{sid}/nurse-assessments?esi=3").json()
+    assert "atria_esi" not in blind
+    assert "outcome" not in blind
+    assert blind["revealed"] is False
+
+    revealed = client.post(f"/v1/assessments/{sid}/reveal").json()
+    assert revealed["revealed"] is True
+    assert "outcome" in revealed
+
+
+
+def test_cors_names_its_origins_rather_than_wildcarding():
+    """This API mutates clinical state; it must not accept a write from anywhere."""
+    import service.app as app_module
+    assert "*" not in app_module.ALLOWED_ORIGINS
