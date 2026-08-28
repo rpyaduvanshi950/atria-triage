@@ -434,3 +434,101 @@ def test_cors_is_a_list_not_a_wildcard():
                      "Access-Control-Request-Method": "POST"},
         )
         assert rejected.status_code == 400
+
+
+# --- a decision in progress must not be interrupted --------------------------
+
+def test_a_patient_under_assessment_is_not_taken_through():
+    """
+    The queue used to move whoever was highest priority, including the patient
+    the nurse was part-way through deciding on. That destroys the blind cycle
+    mid-flight and is wrong in the room too: you do not wheel someone away while
+    they are being triaged. Reproduced on 12/12 shifts before the fix.
+    """
+    scorer = AcuityScorer().fit(generate(600, seed=3))
+    interrupted = 0
+    for seed in range(6):
+        q = QueueEngine(scorer, slots=3)
+        events = build_events(generate(40, seed=seed, hours=3.0))
+        for e in events[:50]:
+            q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
+        waiting = [r for r in q.snapshot()["rows"] if r["state"] != "IN TREATMENT"]
+        if not waiting:
+            continue
+        sid = waiting[0]["stay_id"]
+        token = q.nurse_assess(sid, 3)["reveal_token"]
+        q.reveal(sid, token)
+
+        for e in events[50:]:
+            q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
+            if sid in q.in_treatment or any(p.stay_id == sid for p in q.seen):
+                interrupted += 1
+                break
+    assert interrupted == 0
+
+
+def test_holding_one_patient_does_not_stall_the_queue():
+    """The hold must be narrow: everyone else still moves."""
+    scorer = AcuityScorer().fit(generate(600, seed=3))
+    q = QueueEngine(scorer, slots=3)
+    events = build_events(generate(40, seed=1, hours=3.0))
+    for e in events[:40]:
+        q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
+    waiting = [r for r in q.snapshot()["rows"] if r["state"] != "IN TREATMENT"]
+    if waiting:
+        sid = waiting[0]["stay_id"]
+        q.nurse_assess(sid, 3)
+    for e in events[40:]:
+        q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
+    assert q.snapshot()["seen"] > 0, "the department stopped treating anyone"
+
+
+def test_the_board_says_who_is_being_held():
+    scorer = AcuityScorer().fit(generate(600, seed=3))
+    q = QueueEngine(scorer, slots=3)
+    for e in build_events(generate(20, seed=5, hours=2.0)):
+        q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
+    waiting = [r for r in q.snapshot()["rows"] if r["state"] != "IN TREATMENT"]
+    if not waiting:
+        pytest.skip("no waiting patient")
+    sid = waiting[0]["stay_id"]
+    q.nurse_assess(sid, 3)
+    row = next(r for r in q.snapshot()["rows"] if r["stay_id"] == sid)
+    assert row["held_for_assessment"] is True
+
+
+# --- the reveal token is spent, not merely checked ---------------------------
+
+def test_the_same_reveal_token_cannot_be_used_twice():
+    """
+    The earlier test only proved a token from a *previous cycle* was refused.
+    Reusing the current one still worked, so the token was a password rather
+    than a one-time proof that the nurse's answer was stored first.
+    """
+    q = QueueEngine(AcuityScorer().fit(generate(400, seed=3)), slots=0)
+    for e in build_events(generate(8, seed=5)):
+        q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
+    sid = q.snapshot()["rows"][0]["stay_id"]
+
+    token = q.nurse_assess(sid, 3)["reveal_token"]
+    q.reveal(sid, token)
+    with pytest.raises(BlindAssessmentError, match="already revealed"):
+        q.reveal(sid, token)
+
+
+def test_a_fresh_cycle_issues_a_fresh_token():
+    q = QueueEngine(AcuityScorer().fit(generate(400, seed=3)), slots=0)
+    for e in build_events(generate(8, seed=5)):
+        q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
+    sid = q.snapshot()["rows"][0]["stay_id"]
+
+    first = q.nurse_assess(sid, 3)["reveal_token"]
+    q.reveal(sid, first)
+    q.finalise(sid, clinician="n", reason_code="clinically_well")
+    q.report_change(sid)
+
+    second = q.nurse_assess(sid, 2)["reveal_token"]
+    assert second and second != first
+    with pytest.raises(BlindAssessmentError):
+        q.reveal(sid, first)          # the old one is worthless
+    q.reveal(sid, second)

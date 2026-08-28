@@ -81,6 +81,8 @@ class Patient:
     #: RF11/RF12 — the system declined to rank this patient
     abstained: bool = False
     worsening: bool = False
+    #: the nurse is part-way through this one, so the queue leaves them alone
+    held_for_assessment: bool = False
     abstain_reason: str = ""
     diagnostic_confidence: str = "HIGH"
     pathway: str | None = None
@@ -95,6 +97,7 @@ class Patient:
             band=self.band, band_before=self.band_before,
             state="IN TREATMENT" if self.seen_at is not None else self.state,
             lane=lane_for(self.band), abstained=self.abstained,
+            held_for_assessment=self.held_for_assessment,
             vitals=dict(self.vitals),
             worsening=self.worsening,
             abstain_reason=self.abstain_reason,
@@ -312,9 +315,17 @@ class QueueEngine:
                                   band=p.seen_at_band,
                                   waited_minutes=round(p.waited(p.seen_at)))
 
-        while len(self.in_treatment) < self.slots and self.patients:
+        while len(self.in_treatment) < self.slots:
+            # A patient the nurse is part-way through assessing is not available
+            # to be moved. Taking them through mid-decision destroys the blind
+            # cycle they are in, and is wrong in the room too: you do not wheel
+            # someone away while they are being triaged.
+            available = {k: v for k, v in self.patients.items()
+                         if not self.mid_assessment(k)}
+            if not available:
+                break
             # highest urgency first, then longest wait — the queue's whole job
-            stay_id, p = min(self.patients.items(),
+            stay_id, p = min(available.items(),
                              key=lambda kv: (kv[1].band, -kv[1].waited(self.now)))
             p.seen_at = self.now
             p.seen_at_band = p.band
@@ -332,6 +343,8 @@ class QueueEngine:
         now = self.now or pd.Timestamp.now()
         # patients being treated stay on the board — a nurse needs to see who is
         # in a bay, not just who is queueing. They sort below everyone waiting.
+        for stay_id, p in self.patients.items():
+            p.held_for_assessment = self.mid_assessment(stay_id)
         rows = ([p.as_dict(now) for p in self.patients.values()]
                 + [p.as_dict(now) for p in self.in_treatment.values()])
         rows.sort(key=lambda r: (r["state"] == "IN TREATMENT",
@@ -353,6 +366,16 @@ class QueueEngine:
             audit_entries=len(self.audit),
             audit_intact=self.audit.verify()[0],
         )
+
+    def mid_assessment(self, stay_id: int) -> bool:
+        """
+        True from the moment the nurse commits to an ESI until they sign off.
+
+        Used to hold a patient in the queue rather than moving them, so the
+        decision in progress can be finished.
+        """
+        a = self.workflow.get(stay_id)
+        return bool(a and a.stage is not Stage.SIGNED and a.nurse_esi is not None)
 
     # --- blind nurse-first assessment (PRD 5.2, 6.1, 10.1) -------------------
 

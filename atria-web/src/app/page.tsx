@@ -15,7 +15,18 @@ export default function AssessmentPage() {
 
   const rows = snapshot?.rows ?? [];
   const waiting = rows.filter((r) => r.state !== "IN TREATMENT");
-  const selected = waiting.find((r) => r.ticket === ticket) ?? waiting[0] ?? null;
+  /*
+   * The selection is pinned once a nurse picks someone.
+   *
+   * It used to fall back to waiting[0] whenever the chosen patient was not in
+   * the waiting list — and the queue reorders every couple of seconds, so the
+   * panel jumped to a different patient mid-decision. Look for them across the
+   * whole board, not just the waiting part, so a patient who moves into a bay
+   * stays on screen instead of being silently swapped for someone else.
+   */
+  const pinned = ticket ? rows.find((r) => r.ticket === ticket) ?? null : null;
+  const selected = pinned ?? (ticket ? null : waiting[0] ?? null);
+  const pinnedLeftQueue = pinned !== null && pinned.state === "IN TREATMENT";
 
   const flipRef = useFlip(rows.map((r) => r.ticket));
 

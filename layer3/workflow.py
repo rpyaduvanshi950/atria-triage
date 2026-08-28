@@ -120,10 +120,20 @@ class Assessment:
         if self.nurse_esi is None:
             raise BlindAssessmentError(
                 f"stay {self.stay_id}: cannot reveal before the nurse has chosen")
+        # Revealing twice is refused outright. The comparison is the record of
+        # what the nurse thought before seeing ATRIA; letting it be recomputed
+        # would let a second call quietly overwrite that with a different
+        # outcome, and the audit entry alongside it.
+        if self.stage is not Stage.AWAITING_NURSE:
+            raise BlindAssessmentError(
+                f"stay {self.stay_id}: already revealed — reveal is once per cycle")
         if token is not None and token != self.reveal_token:
             raise BlindAssessmentError(
                 f"stay {self.stay_id}: reveal token does not match the stored "
                 f"assessment")
+        # Spend the token. Holding it open would make it a password rather than
+        # a one-time proof that the nurse's answer was stored first.
+        self.reveal_token = ""
         self.atria_esi = atria_esi
         self.atria_abstained = abstained
         self.guardrail = guardrail
