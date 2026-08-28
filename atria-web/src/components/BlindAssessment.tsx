@@ -131,7 +131,8 @@ export function BlindAssessment({ row, onChanged }: {
               </p>
               <p className="text-[14px] text-ink2 mt-1">
                 Saved with your name, the time, and the readings it was based on.
-                Pick another patient, or report a change below.
+                Nothing more is needed for this patient — pick the next one from
+                the queue.
               </p>
             </div>
           ) : (
@@ -164,11 +165,13 @@ export function BlindAssessment({ row, onChanged }: {
               className="w-full mt-3 min-h-[52px] rounded-xl border border-line bg-card
                          text-[15px] hover:border-warn hover:text-warn
                          disabled:opacity-50 transition-colors">
-        Patient record has changed — start again
+        Report a change in this patient
       </button>
       <p className="text-[14px] text-ink3 mt-2 leading-relaxed">
-        Clears the sign-off and asks for your decision fresh. ATRIA&apos;s earlier
-        suggestion is thrown away so it cannot sway you the second time.
+        Press this if they have worsened, or new observations have come back.
+        It reopens the decision and asks for your ESI again from scratch —
+        ATRIA&apos;s earlier suggestion is thrown away so it cannot sway you the
+        second time.
       </p>
 
       {note && (
