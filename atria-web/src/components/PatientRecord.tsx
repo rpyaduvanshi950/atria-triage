@@ -7,7 +7,7 @@ import type { QueueRow } from "@/types/atria";
 export function PatientRecord({ row }: { row: QueueRow }) {
   return (
     <div>
-      <div className="bg-card border-2 border-line rounded-lg p-4">
+      <div className="card border border-line p-4">
         <div className="text-[18px] font-semibold">{row.complaint}</div>
         <div className="text-[15px] text-ink2 mt-0.5">
           {row.age !== null ? `${Math.round(row.age)} years, ${row.gender ?? "—"}` : "Age unknown"}
@@ -15,14 +15,14 @@ export function PatientRecord({ row }: { row: QueueRow }) {
         </div>
       </div>
 
-      <h3 className="text-[15px] font-semibold mt-5 mb-2">Latest vitals</h3>
+      <h3 className="text-[15px] font-semibold mt-5 mb-2">Observed</h3>
       <div className="grid grid-cols-2 gap-2">
         {Object.entries(VITAL_INFO).map(([key, info]) => {
           const v = row.vitals[key as keyof typeof row.vitals];
           const missing = v === undefined || v === null;
           return (
             <div key={key}
-                 className={clsx("rounded-lg border-2 p-3",
+                 className={clsx("rounded-xl border p-3",
                                  missing ? "border-warn bg-warnsoft" : "border-line bg-card")}>
               <div className="text-[13px] text-ink2">{info.label}</div>
               {missing ? (
@@ -45,7 +45,7 @@ export function PatientRecord({ row }: { row: QueueRow }) {
         })}
       </div>
 
-      <h3 className="text-[15px] font-semibold mt-5 mb-2">Why this priority</h3>
+      <h3 className="text-[15px] font-semibold mt-5 mb-2">Main concern</h3>
       <p className="text-[15px] text-ink2 leading-relaxed">
         {row.red_flag || row.reasons.join(". ") || "Nothing unusual in the vitals."}
       </p>

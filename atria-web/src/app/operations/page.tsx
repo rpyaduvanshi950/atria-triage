@@ -27,7 +27,7 @@ export default function OperationsPage() {
 
   return (
     <>
-      <h1 className="text-[20px] font-semibold mb-1">How busy the next hour looks</h1>
+      <h1 className="text-[20px] font-semibold mb-1">Next-hour outlook</h1>
       <p className="text-[15px] text-ink2 max-w-3xl leading-relaxed mb-5">
         This only affects the order of patients who are <b>equally urgent</b>. It
         can never move someone down a priority. A busy department does not make a
@@ -37,8 +37,8 @@ export default function OperationsPage() {
       <div className="grid lg:grid-cols-[300px_1fr] gap-6">
         <section>
           <h2 className="text-[17px] font-semibold mb-3">Staffing</h2>
-          <Slider label="Nurses on shift" value={nurses} min={1} max={12} onChange={setNurses} />
-          <Slider label="Rooms in the department" value={spaces} min={4} max={40} onChange={setSpaces}
+          <Slider label="Nurses available" value={nurses} min={1} max={12} onChange={setNurses} />
+          <Slider label="Treatment spaces" value={spaces} min={4} max={40} onChange={setSpaces}
                   hint="How many rooms exist. What you can actually use is the smaller of this and what your nurses can safely cover." />
         </section>
 
@@ -46,18 +46,18 @@ export default function OperationsPage() {
           {data && (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-                <Stat label="Right now" value={data.state === "Steady" ? "Steady" : data.state === "Busy" ? "Busy" : "Very busy"} />
-                <Stat label="Free rooms" value={data.open_spaces}
+                <Stat label="Current flow" value={data.state === "Steady" ? "Steady" : data.state === "Busy" ? "Busy" : "Very busy"} />
+                <Stat label="Open spaces" value={data.open_spaces}
                       hint="Rooms that are both empty and have a nurse for them." />
                 <Stat label="Time in hand" value={`${Math.round(data.wait_buffer_minutes)} min`} />
                 <Stat label="Expected arrivals" value={`${data.arrivals_next_hour}/hr`} />
               </div>
 
-              <p className="rounded-lg border-2 border-brand bg-brandsoft px-4 py-3.5 text-[16px] mb-3">
+              <p className="rounded-xl border border-brand bg-brandsoft px-4 py-3.5 text-[16px] mb-3">
                 {data.explanation}
               </p>
               {data.assumptions.map((a) => (
-                <p key={a} className="rounded-lg border-2 border-warn bg-warnsoft px-4 py-2.5 text-[15px] text-warn mb-2">
+                <p key={a} className="rounded-xl border border-warn bg-warnsoft px-4 py-2.5 text-[15px] text-warn mb-2">
                   {a}
                 </p>
               ))}
@@ -74,7 +74,7 @@ export default function OperationsPage() {
                     <ReferenceLine y={data.staffed_spaces} stroke="#b3261e"
                                    strokeDasharray="6 6"
                                    label={{ value: "rooms we can staff", fill: "#b3261e", fontSize: 13 }} />
-                    <Line type="monotone" dataKey="in_treatment" name="In a room"
+                    <Line type="monotone" dataKey="in_treatment" name="In treatment"
                           stroke="#0f766e" strokeWidth={2} dot={false} />
                     <Line type="monotone" dataKey="waiting" name="Waiting"
                           stroke="#a1580a" strokeWidth={2} dot={false} />
@@ -120,7 +120,7 @@ function Slider({ label, value, min, max, onChange, hint }: {
 
 function Stat({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
   return (
-    <div className="bg-card border-2 border-line rounded-lg px-4 py-3" title={hint}>
+    <div className="card border border-line px-4 py-3" title={hint}>
       <div className="text-[14px] text-ink2">{label}</div>
       <div className="text-[24px] font-bold mt-0.5 leading-none">{value}</div>
     </div>

@@ -44,9 +44,9 @@ export default function AssessmentPage() {
     <>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
         <Stat label="Waiting" value={snapshot.waiting} hint="Patients in the queue now." />
-        <Stat label="In a room" value={`${snapshot.in_treatment} of ${snapshot.slots}`}
+        <Stat label="In treatment" value={`${snapshot.in_treatment} of ${snapshot.slots}`}
               hint="Rooms in use. When one frees up, the most urgent waiting patient goes next." />
-        <Stat label="Seen today" value={snapshot.seen} hint="Treated and sent home or admitted." />
+        <Stat label="Checked out" value={snapshot.seen} hint="Treated and sent home or admitted." />
         <Stat label="Moved up" value={snapshot.escalated}
               hint="Patients ATRIA moved to a higher priority. It can never move anyone down." />
         <Stat label="Needs you" value={snapshot.abstained}
@@ -54,7 +54,7 @@ export default function AssessmentPage() {
       </div>
 
       {snapshot.degraded && (
-        <div className="rounded-lg border-2 border-danger bg-dangersoft px-4 py-3.5 mb-5">
+        <div className="rounded-xl border border-danger bg-dangersoft px-4 py-3.5 mb-5">
           <b className="text-danger text-[16px]">Suggestions are off.</b>{" "}
           <span className="text-ink2 text-[15px]">
             The safety rules are still running and will still flag a critical
@@ -74,7 +74,7 @@ export default function AssessmentPage() {
 
       <div className="grid lg:grid-cols-[1.15fr_1.15fr_1fr] gap-5">
         <section aria-label="Attention queue">
-          <h2 className="text-[17px] font-semibold mb-1">Who to see next</h2>
+          <h2 className="text-[17px] font-semibold mb-1">Attention order</h2>
           <p className="text-[14px] text-ink2 mb-3 leading-relaxed">
             The order changes as people wait and as their readings change. Tap a
             patient to assess them. Keys <b>j</b> and <b>k</b> move down and up.
@@ -86,14 +86,14 @@ export default function AssessmentPage() {
         </section>
 
         <section aria-label="Nurse assessment">
-          <h2 className="text-[17px] font-semibold mb-3">Your assessment</h2>
+          <h2 className="text-[17px] font-semibold mb-3">Nurse assessment</h2>
           {selected
             ? <BlindAssessment key={selected.stay_id} row={selected} onChanged={refresh} />
             : <p className="text-[13px] text-ink3">Nobody waiting.</p>}
         </section>
 
         <section aria-label="Patient record">
-          <h2 className="text-[17px] font-semibold mb-3">This patient</h2>
+          <h2 className="text-[17px] font-semibold mb-3">Patient record</h2>
           {selected && <PatientRecord row={selected} />}
         </section>
       </div>
@@ -103,7 +103,7 @@ export default function AssessmentPage() {
 
 function Stat({ label, value, hint }: { label: string; value: React.ReactNode; hint: string }) {
   return (
-    <div className="bg-card border-2 border-line rounded-lg px-4 py-3" title={hint}>
+    <div className="card border border-line px-4 py-3" title={hint}>
       <div className="text-[14px] text-ink2">{label}</div>
       <div className="text-[26px] font-bold mt-0.5 leading-none">{value}</div>
     </div>

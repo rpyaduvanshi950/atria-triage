@@ -33,8 +33,8 @@ export function QueueRowCard({
         `${row.complaint}, waiting ${row.waited} minutes`
       }
       className={clsx(
-        "w-full text-left flex gap-4 items-start p-4 mb-2 rounded-lg border-2 bg-card",
-        "transition-shadow hover:shadow-md",
+        "w-full text-left flex gap-4 items-start p-4 mb-2 rounded-xl bg-card border",
+        "shadow-[0_1px_2px_rgba(33,52,58,.06)] transition-shadow hover:shadow-md",
         treating && "opacity-55",
         row.red_flag || row.abstained
           ? "border-danger"
@@ -46,7 +46,7 @@ export function QueueRowCard({
       )}
     >
       <div className={clsx(
-        "shrink-0 w-14 h-14 rounded-lg grid place-content-center text-center",
+        "shrink-0 w-14 h-14 rounded-xl grid place-content-center text-center",
         urgent ? "bg-dangersoft" : row.band === 3 ? "bg-warnsoft" : "bg-sunk",
       )}>
         <div className={clsx("text-2xl font-bold leading-none",
@@ -88,7 +88,7 @@ export function QueueRowCard({
           {row.missing.length > 0 && (
             <Chip tone="warn">No {row.missing.slice(0, 2).join(", ")}</Chip>
           )}
-          {treating && <Chip tone="plain">In a room</Chip>}
+          {treating && <Chip tone="plain">In treatment</Chip>}
         </div>
       </div>
     </button>

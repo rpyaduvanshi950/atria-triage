@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 const TABS = [
   ["/", "Patients"],
   ["/operations", "Department"],
-  ["/history", "Record of decisions"],
+  ["/history", "Decision history"],
 ] as const;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -26,14 +26,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="bg-warn text-white text-center text-[14px] font-semibold py-1.5">
             SIMULATION — synthetic patients. Not a live department.
           </div>
-          <header className="border-b-2 border-line bg-card">
+          <header className="border-b border-line bg-card">
             <div className="max-w-[1600px] mx-auto px-6 py-3 flex items-center gap-6 flex-wrap">
               <span className="text-[20px] font-bold">ATRIA</span>
               <span className="text-[14px] text-ink3">Emergency triage board</span>
               <nav className="flex gap-1 ml-2">
                 {TABS.map(([href, label]) => (
                   <Link key={href} href={href}
-                        className="px-4 py-2 rounded-lg text-[15px] text-ink2
+                        className="px-4 py-2 rounded-xl text-[15px] text-ink2
                                    hover:bg-sunk hover:text-ink transition-colors">
                     {label}
                   </Link>

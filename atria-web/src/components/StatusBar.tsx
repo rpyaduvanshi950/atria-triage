@@ -12,7 +12,7 @@ export function StatusBar() {
       <button
         onClick={() => api.degraded(!snapshot?.degraded)}
         title="Turns the suggestion engine off. The safety rules keep running."
-        className="px-3 py-2 rounded-lg border-2 border-line hover:border-danger
+        className="px-3 py-2 rounded-xl border border-line hover:border-danger
                    hover:text-danger transition-colors text-[14px]">
         {snapshot?.degraded ? "Turn suggestions back on" : "Turn suggestions off"}
       </button>

@@ -72,7 +72,7 @@ export function BlindAssessment({ row, onChanged }: {
         {["Your decision", "Compare", "Sign off"].map((label, i) => (
           <li key={label}
               className={clsx(
-                "flex-1 rounded-lg px-3 py-2.5 text-[14px] border-2",
+                "flex-1 rounded-xl px-3 py-2.5 text-[14px] border",
                 i === stepIndex ? "border-brand bg-brandsoft text-brand font-semibold"
                                 : i < stepIndex ? "border-line bg-card text-ink3"
                                                 : "border-line2 bg-card text-ink3",
@@ -84,22 +84,22 @@ export function BlindAssessment({ row, onChanged }: {
 
       {!view?.revealed ? (
         <>
-          <div className="rounded-lg border-2 border-brand bg-brandsoft p-4 mb-4">
+          <div className="rounded-xl border border-brand bg-brandsoft p-4 mb-4">
             <p className="text-[16px] font-semibold text-brand">
-              What priority would you give this patient?
+              Choose nurse ESI
             </p>
             <p className="text-[15px] text-ink2 mt-1 leading-relaxed">
-              ATRIA has not made a suggestion yet — on purpose. Seeing a number
-              first makes it harder to trust your own judgement, so you decide,
-              then we compare.
+              Atria stays hidden until you choose. Seeing a number first makes it
+              harder to trust your own judgement, so you decide, then we compare.
             </p>
           </div>
 
           <div className="grid gap-2">
             {[1, 2, 3, 4, 5].map((esi) => (
               <button key={esi} disabled={busy} onClick={() => choose(esi)}
-                      className="min-h-[64px] text-left px-4 py-3 rounded-lg border-2 border-line
-                                 bg-card hover:border-brand hover:bg-brandsoft
+                      className="min-h-[64px] text-left px-4 py-3 rounded-xl border border-line
+                                 bg-card shadow-[0_1px_2px_rgba(33,52,58,.06)]
+                                 hover:border-brand hover:bg-brandsoft
                                  disabled:opacity-50 transition-colors">
                 <div className="flex items-baseline gap-3">
                   <span className="text-[22px] font-bold w-6">{esi}</span>
@@ -116,8 +116,8 @@ export function BlindAssessment({ row, onChanged }: {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 mb-4">
-            <Card label="You said" esi={view.nurse_esi} highlight />
-            <Card label="ATRIA said"
+            <Card label="Nurse ESI" esi={view.nurse_esi} highlight />
+            <Card label="Atria recommendation"
                   esi={view.atria_abstained ? null : view.atria_esi ?? null}
                   fallback="No score" />
           </div>
@@ -138,9 +138,9 @@ export function BlindAssessment({ row, onChanged }: {
             <>
               {view.needs_reason && (
                 <label className="block mt-4">
-                  <span className="text-[15px] font-semibold">Why?</span>
+                  <span className="text-[15px] font-semibold">Add a reason</span>
                   <select value={reason} onChange={(e) => setReason(e.target.value)}
-                          className="w-full mt-1.5 rounded-lg border-2 border-line bg-card
+                          className="w-full mt-1.5 rounded-xl border border-line bg-card
                                      px-3 py-3 text-[15px] min-h-[52px]">
                     {Object.entries(REASON_CHOICES).map(([k, v]) => (
                       <option key={k} value={k}>{v}</option>
@@ -150,7 +150,7 @@ export function BlindAssessment({ row, onChanged }: {
               )}
               <button disabled={busy}
                       onClick={() => run(() => api.finalize(row.stay_id, view.needs_reason ? reason : ""))}
-                      className="w-full mt-4 min-h-[60px] rounded-lg bg-brand text-white
+                      className="w-full mt-4 min-h-[60px] rounded-xl bg-brand text-white
                                  text-[17px] font-semibold hover:opacity-90
                                  disabled:opacity-50 transition-opacity">
                 {(view.nurse_esi ?? 5) <= 2 ? "Confirm and take them through" : "Confirm and next patient"}
@@ -161,10 +161,10 @@ export function BlindAssessment({ row, onChanged }: {
       )}
 
       <button disabled={busy} onClick={() => run(() => api.worsening(row.stay_id))}
-              className="w-full mt-3 min-h-[52px] rounded-lg border-2 border-line bg-card
+              className="w-full mt-3 min-h-[52px] rounded-xl border border-line bg-card
                          text-[15px] hover:border-warn hover:text-warn
                          disabled:opacity-50 transition-colors">
-        This patient has changed — start again
+        Patient record has changed — start again
       </button>
       <p className="text-[14px] text-ink3 mt-2 leading-relaxed">
         Clears the sign-off and asks for your decision fresh. ATRIA&apos;s earlier
@@ -184,7 +184,7 @@ function Card({ label, esi, highlight, fallback }: {
   label: string; esi: number | null; highlight?: boolean; fallback?: string;
 }) {
   return (
-    <div className={clsx("rounded-lg border-2 p-4 text-center",
+    <div className={clsx("rounded-xl border p-4 text-center",
                          highlight ? "border-brand bg-brandsoft" : "border-line bg-card")}>
       <div className="text-[14px] text-ink2">{label}</div>
       <div className="text-[36px] font-bold leading-tight">{esi ?? "—"}</div>
@@ -201,7 +201,7 @@ function Banner({ outcome }: { outcome: Outcome }) {
     danger: "border-danger bg-dangersoft text-danger",
   };
   return (
-    <div className={clsx("rounded-lg border-2 p-4", tones[c.tone])}>
+    <div className={clsx("rounded-xl border p-4", tones[c.tone])}>
       <p className="text-[16px] font-semibold">{c.title}</p>
       <p className="text-[15px] text-ink2 mt-1 leading-relaxed">{c.body}</p>
     </div>

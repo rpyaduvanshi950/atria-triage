@@ -44,19 +44,19 @@ export default function HistoryPage() {
         {(["audit", "general"] as const).map((m) => (
           <button key={m} onClick={() => setMode(m)}
                   className={m === mode
-                    ? "px-4 py-2.5 rounded-lg text-[15px] border-2 border-brand bg-brandsoft text-brand font-semibold"
-                    : "px-4 py-2.5 rounded-lg text-[15px] border-2 border-line bg-card text-ink2"}>
-            {m === "audit" ? "Decisions only" : "Everything"}
+                    ? "px-4 py-2.5 rounded-xl text-[15px] border border-brand bg-brandsoft text-brand font-semibold"
+                    : "px-4 py-2.5 rounded-xl text-[15px] border border-line bg-card text-ink2"}>
+            {m === "audit" ? "Audit log" : "General log"}
           </button>
         ))}
       </div>
       <p className="text-[15px] text-ink2 mb-4 leading-relaxed max-w-3xl">
-        <b className="text-ink">Decisions only</b> shows what you or ATRIA decided.
-        <b className="text-ink"> Everything</b> also shows arrivals, moves up the
+        <b className="text-ink">Audit log</b> shows what you or ATRIA decided.
+        <b className="text-ink"> General log</b> also shows arrivals, moves up the
         queue, and patients going through.
       </p>
 
-      <div className="border-2 border-line rounded-lg overflow-x-auto bg-card">
+      <div className="card border border-line overflow-x-auto">
         <table className="w-full text-[14px]">
           <thead>
             <tr className="bg-sunk text-[13px] text-ink2 font-semibold">
