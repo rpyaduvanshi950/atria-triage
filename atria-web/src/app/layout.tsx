@@ -20,7 +20,18 @@ const TABS = [
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen">
+      {/*
+        * suppressHydrationWarning is on <body> only, and only for its own
+        * attributes. Browser extensions — Grammarly, password managers, dark-mode
+        * add-ons — inject attributes here before React hydrates, which React
+        * then reports as a mismatch it cannot patch. That is the extension's
+        * doing, not ours.
+        *
+        * The suppression does not extend to children, so a genuine mismatch
+        * anywhere inside the app still surfaces. Putting it higher, or on a
+        * component that renders real data, would hide the bugs worth seeing.
+        */}
+      <body className="min-h-screen" suppressHydrationWarning>
         <QueueProvider>
           {/* INT-008: simulation data must never be mistaken for a live read. */}
           <div className="bg-warn text-white text-center text-[14px] font-semibold py-1.5">
