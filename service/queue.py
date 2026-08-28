@@ -408,10 +408,12 @@ class QueueEngine:
                           abstained=p.abstained, guardrail=bool(p.red_flag))
         return a.visible_to_nurse()
 
-    def finalise(self, stay_id: int, *, clinician: str, reason_code: str = "") -> dict:
+    def finalise(self, stay_id: int, *, clinician: str, reason_code: str = "",
+                 reason_note: str = "") -> dict:
         """Sign off. Blocked without a reason where the PRD requires one."""
         a = self.workflow.open(stay_id)
-        final = a.finalise(clinician=clinician, reason_code=reason_code)
+        final = a.finalise(clinician=clinician, reason_code=reason_code,
+                           reason_note=reason_note)
         p = self.patients.get(stay_id) or self.in_treatment.get(stay_id)
         if p is not None:
             p.band = apply(p.band, final, Source.HUMAN)
@@ -420,8 +422,8 @@ class QueueEngine:
         self.audit.append("sign_off", stay_id, self.now, final_esi=final,
                           nurse_esi=a.nurse_esi, atria_esi=a.atria_esi,
                           outcome=a.outcome.value if a.outcome else None,
-                          reason_code=reason_code, clinician=clinician,
-                          cycle=a.cycle)
+                          reason_code=reason_code, reason_note=a.reason_note,
+                          clinician=clinician, cycle=a.cycle)
         return a.visible_to_nurse()
 
     def report_change(self, stay_id: int, *, reporter: str = "nurse.demo") -> dict:

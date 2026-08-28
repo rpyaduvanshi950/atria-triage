@@ -55,6 +55,7 @@ class Assessment:
     guardrail: bool = False
     outcome: Outcome | None = None
     reason_code: str = ""
+    reason_note: str = ""
     final_esi: int | None = None
     clinician: str = ""
     #: how many times this patient has been re-assessed from scratch
@@ -89,7 +90,8 @@ class Assessment:
                     atria_abstained=self.atria_abstained,
                     outcome=self.outcome.value if self.outcome else None,
                     needs_reason=self.needs_reason,
-                    final_esi=self.final_esi, reason_code=self.reason_code)
+                    final_esi=self.final_esi, reason_code=self.reason_code,
+                    reason_note=self.reason_note)
 
     @property
     def needs_reason(self) -> bool:
@@ -154,13 +156,25 @@ class Assessment:
         return (Outcome.NURSE_ESCALATION if self.nurse_esi < self.atria_esi
                 else Outcome.NURSE_DOWNGRADE)
 
-    def finalise(self, *, clinician: str, reason_code: str = "") -> int:
+    #: Codes that describe nothing on their own. Picking one is a promise to
+    #: say what actually happened, so the note becomes mandatory.
+    CODES_NEEDING_A_NOTE = ("other",)
+
+    def finalise(self, *, clinician: str, reason_code: str = "",
+                 reason_note: str = "") -> int:
         if self.stage is not Stage.COMPARED:
             raise BlindAssessmentError(
                 f"stay {self.stay_id}: cannot finalise from {self.stage.value}")
         if self.needs_reason and not reason_code:
             raise BlindAssessmentError(
                 f"stay {self.stay_id}: {self.outcome.value} requires a reason code")
+        # "Other" in an audit trail is the same as no reason at all. Whoever
+        # reviews this months from now needs the sentence, not the category.
+        if reason_code in self.CODES_NEEDING_A_NOTE and not reason_note.strip():
+            raise BlindAssessmentError(
+                f"stay {self.stay_id}: reason code '{reason_code}' needs a written "
+                f"explanation")
+        self.reason_note = reason_note.strip()
         self.reason_code = reason_code
         self.clinician = clinician
         self.final_esi = self.nurse_esi
@@ -181,6 +195,7 @@ class Assessment:
         self.atria_abstained = False
         self.outcome = None
         self.reason_code = ""
+        self.reason_note = ""
         self.final_esi = None
         self.reveal_token = ""      # a new cycle needs a new token
         self.cycle += 1

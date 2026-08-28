@@ -227,10 +227,11 @@ async def reveal(stay_id: int, reveal_token: str = "") -> JSONResponse:
 
 
 @app.post("/v1/assessments/{stay_id}/finalize")
-async def finalize(stay_id: int, reason_code: str = "",
+async def finalize(stay_id: int, reason_code: str = "", reason_note: str = "",
                    clinician: str = "nurse.demo") -> JSONResponse:
     try:
-        payload = engine.finalise(stay_id, clinician=clinician, reason_code=reason_code)
+        payload = engine.finalise(stay_id, clinician=clinician,
+                                  reason_code=reason_code, reason_note=reason_note)
     except BlindAssessmentError as exc:
         return JSONResponse({"error": str(exc)}, status_code=422)
     await _broadcast()

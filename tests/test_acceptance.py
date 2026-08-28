@@ -532,3 +532,87 @@ def test_a_fresh_cycle_issues_a_fresh_token():
     with pytest.raises(BlindAssessmentError):
         q.reveal(sid, first)          # the old one is worthless
     q.reveal(sid, second)
+
+
+# --- "other" must be written out, not just selected --------------------------
+
+def _signed_ready(esi: int = 5):
+    q = QueueEngine(AcuityScorer().fit(generate(400, seed=3)), slots=0)
+    for e in build_events(generate(8, seed=5)):
+        q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
+    sid = q.snapshot()["rows"][0]["stay_id"]
+    token = q.nurse_assess(sid, esi)["reveal_token"]
+    q.reveal(sid, token)
+    return q, sid
+
+
+def test_other_needs_a_written_explanation():
+    """
+    "Something else" in an audit trail is the same as no reason at all. Whoever
+    reviews it months later needs the sentence, not the category.
+    """
+    q, sid = _signed_ready()
+    with pytest.raises(BlindAssessmentError, match="needs a written explanation"):
+        q.finalise(sid, clinician="n", reason_code="other")
+
+
+def test_whitespace_is_not_an_explanation():
+    q, sid = _signed_ready()
+    with pytest.raises(BlindAssessmentError, match="needs a written explanation"):
+        q.finalise(sid, clinician="n", reason_code="other", reason_note="   ")
+
+
+def test_a_written_reason_reaches_the_audit_log():
+    q, sid = _signed_ready()
+    q.finalise(sid, clinician="n", reason_code="other",
+               reason_note="  Family reports this is his usual baseline.  ")
+    entry = q.audit.entries[-1]
+    assert entry.kind == "sign_off"
+    assert entry.payload["reason_note"] == "Family reports this is his usual baseline."
+
+
+def test_the_specific_codes_still_stand_alone():
+    """Only the codes that describe nothing demand prose."""
+    q, sid = _signed_ready()
+    q.finalise(sid, clinician="n", reason_code="clinically_well")
+    assert q.workflow.open(sid).final_esi is not None
+
+
+def test_the_note_is_cleared_when_a_cycle_reopens():
+    q, sid = _signed_ready()
+    q.finalise(sid, clinician="n", reason_code="other", reason_note="first pass")
+    q.report_change(sid)
+    assert q.workflow.open(sid).reason_note == ""
+
+
+def test_the_api_refuses_other_without_a_note():
+    from fastapi.testclient import TestClient
+    import service.app as app_module
+
+    async def _no_replay(*_a, **_kw):
+        return None
+
+    original, app_module._replay = app_module._replay, _no_replay
+    try:
+        with TestClient(app_module.app) as client:
+            engine = app_module.engine
+            engine.scorer = engine.scorer or AcuityScorer().fit(generate(600, seed=3))
+            engine.slots = 0
+            for e in build_events(generate(10, seed=5)):
+                engine.on_arrival(e) if e.kind == "arrival" else engine.on_vitals(e)
+            sid = client.get("/v1/queue").json()["rows"][0]["stay_id"]
+
+            token = client.post(
+                f"/v1/encounters/{sid}/nurse-assessments?esi=5").json()["reveal_token"]
+            client.post(f"/v1/assessments/{sid}/reveal?token={token}")
+
+            blocked = client.post(
+                f"/v1/assessments/{sid}/finalize?reason_code=other")
+            assert blocked.status_code == 422
+
+            ok = client.post(
+                f"/v1/assessments/{sid}/finalize?reason_code=other"
+                f"&reason_note=Patient%20is%20at%20baseline")
+            assert ok.status_code == 200
+    finally:
+        app_module._replay = original

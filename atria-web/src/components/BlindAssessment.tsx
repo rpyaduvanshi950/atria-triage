@@ -42,19 +42,24 @@ export function BlindAssessment({ row, onChanged }: {
   const [view, setView] = useState<AssessmentView | null>(null);
   const [token, setToken] = useState("");
   const [reason, setReason] = useState("reassessed_at_bedside");
+  const [note, setNote] = useState("");
+  /* "Something else" names no reason at all, so it has to be written out. The
+     server enforces this too — the UI just says so before you press the button. */
+  const noteRequired = reason === "other";
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
 
-  useEffect(() => { setView(null); setToken(""); setNote(null); }, [row.stay_id]);
+  useEffect(() => { setView(null); setToken(""); setProblem(null); setNote(""); },
+            [row.stay_id]);
 
   const stage = view?.stage ?? "awaiting_nurse";
   const stepIndex = stage === "awaiting_nurse" ? 0 : stage === "compared" ? 1 : 2;
 
   const run = async (fn: () => Promise<AssessmentView>) => {
     if (busy) return;
-    setBusy(true); setNote(null);
+    setBusy(true); setProblem(null);
     try { setView(await fn()); onChanged(); }
-    catch (e) { setNote(e instanceof ApiError ? e.message : "Something went wrong."); }
+    catch (e) { setProblem(e instanceof ApiError ? e.message : "Something went wrong."); }
     finally { setBusy(false); }
   };
 
@@ -147,10 +152,32 @@ export function BlindAssessment({ row, onChanged }: {
                       <option key={k} value={k}>{v}</option>
                     ))}
                   </select>
+                  {noteRequired && (
+                    <span className="block mt-3">
+                      <span className="text-[15px] font-semibold">
+                        In your own words
+                      </span>
+                      <span className="block text-[14px] text-ink2 mb-1.5">
+                        &quot;Something else&quot; on its own tells whoever reviews
+                        this nothing. Say what you saw.
+                      </span>
+                      <textarea
+                        value={note} onChange={(e) => setNote(e.target.value)}
+                        rows={3} autoFocus
+                        placeholder="e.g. Family says this is his normal breathing pattern."
+                        className="w-full rounded-xl border border-line bg-card
+                                   px-3 py-2.5 text-[15px] resize-y" />
+                    </span>
+                  )}
                 </label>
               )}
-              <button disabled={busy}
-                      onClick={() => run(() => api.finalize(row.stay_id, view.needs_reason ? reason : ""))}
+              <button disabled={busy || (view.needs_reason && noteRequired && !note.trim())}
+                      title={view.needs_reason && noteRequired && !note.trim()
+                        ? "Write what you saw before signing off" : undefined}
+                      onClick={() => run(() => api.finalize(
+                        row.stay_id,
+                        view.needs_reason ? reason : "",
+                        view.needs_reason && noteRequired ? note : ""))}
                       className="w-full mt-4 min-h-[60px] rounded-xl bg-brand text-white
                                  text-[17px] font-semibold hover:opacity-90
                                  disabled:opacity-50 transition-opacity">
@@ -174,7 +201,7 @@ export function BlindAssessment({ row, onChanged }: {
         second time.
       </p>
 
-      {note && (
+      {problem && (
         <p role="status" className="text-[15px] text-warn mt-3 px-3 py-2 rounded-lg bg-warnsoft">
           {note}
         </p>

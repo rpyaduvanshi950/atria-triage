@@ -58,9 +58,11 @@ export const api = {
     ),
 
   /** 422 when the outcome requires a reason and none was given. */
-  finalize: (stayId: number, reasonCode = "") =>
+  finalize: (stayId: number, reasonCode = "", reasonNote = "") =>
     request<AssessmentView>(
-      `/v1/assessments/${stayId}/finalize?reason_code=${encodeURIComponent(reasonCode)}`,
+      `/v1/assessments/${stayId}/finalize` +
+        `?reason_code=${encodeURIComponent(reasonCode)}` +
+        `&reason_note=${encodeURIComponent(reasonNote)}`,
       { method: "POST" },
     ),
 
