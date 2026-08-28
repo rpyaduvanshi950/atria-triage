@@ -11,9 +11,14 @@ npm install
 npm run dev            # http://localhost:3000
 ```
 
-Point it elsewhere with `NEXT_PUBLIC_ATRIA_API`. The engine must allow this
-origin — set `ATRIA_ALLOWED_ORIGINS` on the Python side if it is not
-`localhost:3000`.
+Point it elsewhere with `NEXT_PUBLIC_ATRIA_API`.
+
+**If port 3000 is taken**, Next falls back to 3001 or 3002. The engine allows
+`localhost` and `127.0.0.1` on 3000–3002 and 3100 by default, so that just
+works. For any other origin, set `ATRIA_ALLOWED_ORIGINS` on the Python side —
+otherwise every request fails preflight and the browser reports a bare 400 with
+no explanation. The engine prints its allow-list on startup for exactly that
+reason.
 
 ## What lives where
 

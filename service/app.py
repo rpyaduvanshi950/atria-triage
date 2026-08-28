@@ -30,10 +30,17 @@ app = FastAPI(title="ATRIA", version="0.2.0")
 # Vercel in production. Origins are listed rather than wildcarded: this API
 # mutates clinical state, so it should never accept a cross-origin write from
 # somewhere nobody has named.
+# Next falls back to 3001, 3002... when 3000 is taken, and a nurse-facing demo
+# should not fail with an opaque 400 because of a port collision. The local dev
+# range is allowed by default; production origins come from the environment.
+_DEV_ORIGINS = [
+    f"http://{host}:{port}"
+    for host in ("localhost", "127.0.0.1")
+    for port in (3000, 3001, 3002, 3100)
+]
 ALLOWED_ORIGINS = [
     o.strip() for o in os.environ.get(
-        "ATRIA_ALLOWED_ORIGINS",
-        "http://localhost:3000,http://127.0.0.1:3000").split(",") if o.strip()
+        "ATRIA_ALLOWED_ORIGINS", ",".join(_DEV_ORIGINS)).split(",") if o.strip()
 ]
 app.add_middleware(
     CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True,
@@ -45,6 +52,9 @@ clients: set[WebSocket] = set()
 
 @app.on_event("startup")
 async def startup() -> None:
+    # Printed because a rejected preflight surfaces as a bare 400 with no
+    # explanation, and the cause is almost always an origin nobody listed.
+    print(f"ATRIA: accepting browser requests from {', '.join(ALLOWED_ORIGINS)}")
     engine.scorer = AcuityScorer().fit(generate(1500, seed=3))
     asyncio.create_task(_replay())
 

@@ -406,3 +406,31 @@ def test_reveal_token_is_required_and_single_use():
             assert stale.status_code == 409
     finally:
         app_module._replay = original
+
+
+# --- CORS: a port collision must not look like a broken API ------------------
+
+def test_the_local_dev_ports_are_allowed_by_default():
+    """
+    Next falls back to 3001, 3002... when 3000 is taken. A rejected preflight
+    surfaces in the browser as a bare 400 with no explanation, which is a
+    miserable thing to debug during a demo.
+    """
+    import service.app as app_module
+    for port in (3000, 3001, 3002):
+        assert f"http://localhost:{port}" in app_module.ALLOWED_ORIGINS
+
+
+def test_cors_is_a_list_not_a_wildcard():
+    """This API mutates clinical state; it must not accept a write from anywhere."""
+    import service.app as app_module
+    assert "*" not in app_module.ALLOWED_ORIGINS
+
+    from fastapi.testclient import TestClient
+    with TestClient(app_module.app) as client:
+        rejected = client.options(
+            "/v1/queue",
+            headers={"Origin": "http://somewhere-else.example",
+                     "Access-Control-Request-Method": "POST"},
+        )
+        assert rejected.status_code == 400
