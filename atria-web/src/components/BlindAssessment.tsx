@@ -1,152 +1,148 @@
 "use client";
 
 /**
- * The blind cycle: assess, compare, sign off.
+ * Decide, compare, sign off.
  *
- * The recommendation is never fetched before the nurse commits. The server
- * enforces that with a 409 and an absent field; this component simply has
- * nothing to render until `revealed` is true. A client cannot leak what it was
- * never sent, which is the whole reason the guard lives on the server.
+ * One decision on screen at a time. The recommendation is not fetched until the
+ * nurse has committed, and the reveal call carries a token the server issued
+ * when their answer was stored — so the order cannot be skipped from here.
  */
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { ApiError, api } from "@/lib/api";
-import {
-  ESI_LABEL, ESI_MEANING, REASON_CODES,
-  type AssessmentView, type Outcome, type QueueRow,
-} from "@/types/atria";
+import { ESI_FULL, ESI_SHORT, PRIORITY_NAME, REASON_CHOICES } from "@/types/copy";
+import type { AssessmentView, Outcome, QueueRow } from "@/types/atria";
 
-const STEPS = [
-  ["1", "Assess", "Choose an ESI. ATRIA is hidden."],
-  ["2", "Compare", "See ATRIA and resolve the difference."],
-  ["3", "Sign off", "Confirm, with a reason where required."],
-] as const;
-
-const OUTCOME_COPY: Record<Outcome, { tone: string; title: string; body: string }> = {
+const OUTCOME: Record<Outcome, { tone: string; title: string; body: string }> = {
   match: {
-    tone: "accent", title: "You agree",
-    body: "Confirm and move on.",
+    tone: "ok", title: "You and ATRIA agree",
+    body: "Nothing to resolve. Confirm and move on.",
   },
   nurse_escalation: {
-    tone: "signal", title: "You are more urgent than ATRIA",
-    body: "Your view stands and no reason is required — a clinician escalating is never questioned. The difference is logged.",
+    tone: "warn", title: "You chose more urgent than ATRIA",
+    body: "Your decision stands and you do not need to explain it. Nurses raising urgency are never questioned. The difference is recorded.",
   },
   nurse_downgrade: {
-    tone: "signal", title: "You are less urgent than ATRIA",
-    body: "This is the direction that can harm someone, so it needs a reason before sign-off.",
+    tone: "warn", title: "You chose less urgent than ATRIA",
+    body: "This is the direction that can cause harm, so please say why before you sign off.",
   },
   guardrail: {
-    tone: "critical", title: "A hard rule fired on recorded values",
-    body: "Going less urgent needs a reason and escalates to the charge nurse. No model output can suppress this.",
+    tone: "danger", title: "A safety rule fired on a recorded reading",
+    body: "You can still choose less urgent, but please say why. The charge nurse is told.",
   },
   uncertain: {
-    tone: "signal", title: "ATRIA abstained",
-    body: "Essential data is missing and it will not guess. Complete the vitals, or give a reason to sign off regardless.",
+    tone: "warn", title: "ATRIA would not give a score",
+    body: "Important readings are missing and it will not guess. Take the vitals, or say why you are signing off without them.",
   },
 };
 
 export function BlindAssessment({ row, onChanged }: {
-  row: QueueRow;
-  onChanged: () => void;
+  row: QueueRow; onChanged: () => void;
 }) {
   const [view, setView] = useState<AssessmentView | null>(null);
+  const [token, setToken] = useState("");
   const [reason, setReason] = useState("reassessed_at_bedside");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
-  // A new patient means a new cycle. Never carry a view across patients.
-  useEffect(() => {
-    setView(null);
-    setNote(null);
-  }, [row.stay_id]);
+  useEffect(() => { setView(null); setToken(""); setNote(null); }, [row.stay_id]);
 
   const stage = view?.stage ?? "awaiting_nurse";
-  const here = STEPS.findIndex(([n]) => n === (stage === "awaiting_nurse" ? "1" : stage === "compared" ? "2" : "3"));
+  const stepIndex = stage === "awaiting_nurse" ? 0 : stage === "compared" ? 1 : 2;
 
-  /** Every transition is guarded so a double-click cannot reach the engine twice. */
   const run = async (fn: () => Promise<AssessmentView>) => {
     if (busy) return;
-    setBusy(true);
-    setNote(null);
-    try {
-      setView(await fn());
-      onChanged();
-    } catch (e) {
-      setNote(e instanceof ApiError ? e.message : "Something went wrong.");
-    } finally {
-      setBusy(false);
-    }
+    setBusy(true); setNote(null);
+    try { setView(await fn()); onChanged(); }
+    catch (e) { setNote(e instanceof ApiError ? e.message : "Something went wrong."); }
+    finally { setBusy(false); }
   };
 
   const choose = (esi: number) =>
     run(async () => {
-      await api.nurseAssess(row.stay_id, esi);
-      return api.reveal(row.stay_id);
+      const stored = await api.nurseAssess(row.stay_id, esi);
+      const t = (stored as AssessmentView & { reveal_token?: string }).reveal_token ?? "";
+      setToken(t);
+      return api.reveal(row.stay_id, t);
     });
 
   return (
     <div>
-      <div className="flex mb-3.5">
-        {STEPS.map(([n, name, hint], i) => (
-          <div key={n}
-               className={clsx(
-                 "flex-1 px-3 py-2 border border-r-0 last:border-r mono text-[11px]",
-                 i === here ? "bg-surface border-accent text-ink2" : "border-rule text-ink3",
-               )}>
-            <b className={clsx("block text-[12.5px] mb-0.5 font-medium",
-                               i === here ? "text-accent" : "text-ink3")}>
-              {n} · {name}
-            </b>
-            {hint}
-          </div>
+      <ol className="flex gap-2 mb-5" aria-label="Steps">
+        {["Your decision", "Compare", "Sign off"].map((label, i) => (
+          <li key={label}
+              className={clsx(
+                "flex-1 rounded-lg px-3 py-2.5 text-[14px] border-2",
+                i === stepIndex ? "border-brand bg-brandsoft text-brand font-semibold"
+                                : i < stepIndex ? "border-line bg-card text-ink3"
+                                                : "border-line2 bg-card text-ink3",
+              )}>
+            <span className="font-semibold">{i + 1}.</span> {label}
+          </li>
         ))}
-      </div>
+      </ol>
 
       {!view?.revealed ? (
         <>
-          <div className="bg-surface border border-dashed border-accent px-4 py-3.5 text-[12.5px] text-ink2 leading-relaxed">
-            <b className="text-accent">ATRIA is locked.</b> Its recommendation is
-            not on this page — not hidden, <i>absent</i> — until you choose. Show a
-            clinician a number first and they converge on it; this is the cheapest
-            defence against that.
+          <div className="rounded-lg border-2 border-brand bg-brandsoft p-4 mb-4">
+            <p className="text-[16px] font-semibold text-brand">
+              What priority would you give this patient?
+            </p>
+            <p className="text-[15px] text-ink2 mt-1 leading-relaxed">
+              ATRIA has not made a suggestion yet — on purpose. Seeing a number
+              first makes it harder to trust your own judgement, so you decide,
+              then we compare.
+            </p>
           </div>
-          <div className="grid gap-1.5 mt-3">
+
+          <div className="grid gap-2">
             {[1, 2, 3, 4, 5].map((esi) => (
               <button key={esi} disabled={busy} onClick={() => choose(esi)}
-                      title={ESI_MEANING[esi]}
-                      className="min-h-[56px] px-4 text-left bg-surface border border-rule
-                                 hover:border-accent disabled:opacity-50 transition-colors">
-                <span className="text-[17px] font-semibold mr-3">{esi}</span>
-                <span className="text-[13px] text-ink2">{ESI_LABEL[esi]}</span>
-                <span className="block text-[11px] text-ink3 mt-0.5">{ESI_MEANING[esi]}</span>
+                      className="min-h-[64px] text-left px-4 py-3 rounded-lg border-2 border-line
+                                 bg-card hover:border-brand hover:bg-brandsoft
+                                 disabled:opacity-50 transition-colors">
+                <div className="flex items-baseline gap-3">
+                  <span className="text-[22px] font-bold w-6">{esi}</span>
+                  <span className="text-[16px] font-semibold">{ESI_SHORT[esi]}</span>
+                  <span className="text-[14px] text-ink3 ml-auto">{PRIORITY_NAME[esi]}</span>
+                </div>
+                <div className="text-[14px] text-ink2 mt-0.5 ml-9">
+                  {ESI_FULL[esi].split(" — ")[1]}
+                </div>
               </button>
             ))}
           </div>
         </>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-2 mb-2.5">
-            <Card label="You" value={view.nurse_esi} accent />
-            <Card label="ATRIA"
-                  value={view.atria_abstained ? null : view.atria_esi ?? null}
-                  fallback="abstained" />
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <Card label="You said" esi={view.nurse_esi} highlight />
+            <Card label="ATRIA said"
+                  esi={view.atria_abstained ? null : view.atria_esi ?? null}
+                  fallback="No score" />
           </div>
 
-          {view.outcome && <OutcomeBanner outcome={view.outcome} />}
+          {view.outcome && <Banner outcome={view.outcome} />}
 
           {stage === "signed" ? (
-            <div className="border border-accent bg-surface px-4 py-3 text-[12.5px] text-ink2 mt-2">
-              <b className="text-accent">Signed off at ESI {view.final_esi}.</b>{" "}
-              Recorded with your identity, the model version and the input snapshot.
+            <div className="rounded-lg border-2 border-ok bg-oksoft p-4 mt-4">
+              <p className="text-[16px] font-semibold text-ok">
+                Signed off at priority {view.final_esi}
+              </p>
+              <p className="text-[14px] text-ink2 mt-1">
+                Saved with your name, the time, and the readings it was based on.
+                Pick another patient, or report a change below.
+              </p>
             </div>
           ) : (
             <>
               {view.needs_reason && (
-                <label className="block mt-3">
-                  <span className="mono text-[10px] tracking-wider text-ink3">WHY?</span>
+                <label className="block mt-4">
+                  <span className="text-[15px] font-semibold">Why?</span>
                   <select value={reason} onChange={(e) => setReason(e.target.value)}
-                          className="w-full mt-1 bg-surface2 border border-rule px-3 py-2 text-[13px]">
-                    {Object.entries(REASON_CODES).map(([k, v]) => (
+                          className="w-full mt-1.5 rounded-lg border-2 border-line bg-card
+                                     px-3 py-3 text-[15px] min-h-[52px]">
+                    {Object.entries(REASON_CHOICES).map(([k, v]) => (
                       <option key={k} value={k}>{v}</option>
                     ))}
                   </select>
@@ -154,9 +150,10 @@ export function BlindAssessment({ row, onChanged }: {
               )}
               <button disabled={busy}
                       onClick={() => run(() => api.finalize(row.stay_id, view.needs_reason ? reason : ""))}
-                      className="w-full mt-3 py-3 bg-accent text-ground font-semibold
-                                 disabled:opacity-50 hover:opacity-90 transition-opacity">
-                {(view.nurse_esi ?? 5) <= 2 ? "Confirm & send inside" : "Confirm & advance"}
+                      className="w-full mt-4 min-h-[60px] rounded-lg bg-brand text-white
+                                 text-[17px] font-semibold hover:opacity-90
+                                 disabled:opacity-50 transition-opacity">
+                {(view.nurse_esi ?? 5) <= 2 ? "Confirm and take them through" : "Confirm and next patient"}
               </button>
             </>
           )}
@@ -164,49 +161,49 @@ export function BlindAssessment({ row, onChanged }: {
       )}
 
       <button disabled={busy} onClick={() => run(() => api.worsening(row.stay_id))}
-              className="w-full mt-2 py-2.5 border border-rule text-[12.5px] text-ink2
-                         hover:border-signal hover:text-signal disabled:opacity-50 transition-colors">
-        ⟲ Report change / worsening
+              className="w-full mt-3 min-h-[52px] rounded-lg border-2 border-line bg-card
+                         text-[15px] hover:border-warn hover:text-warn
+                         disabled:opacity-50 transition-colors">
+        This patient has changed — start again
       </button>
-      <p className="text-[11px] text-ink3 mt-1.5 leading-relaxed">
-        Clears the sign-off and starts a <b>fresh blind cycle</b>. The old
-        recommendation is discarded — showing it would anchor the very decision
-        this keeps independent.
+      <p className="text-[14px] text-ink3 mt-2 leading-relaxed">
+        Clears the sign-off and asks for your decision fresh. ATRIA&apos;s earlier
+        suggestion is thrown away so it cannot sway you the second time.
       </p>
 
       {note && (
-        <p className="mono text-[11px] text-signal mt-2" role="status">↩ {note}</p>
+        <p role="status" className="text-[15px] text-warn mt-3 px-3 py-2 rounded-lg bg-warnsoft">
+          {note}
+        </p>
       )}
     </div>
   );
 }
 
-function Card({ label, value, accent, fallback }: {
-  label: string; value: number | null; accent?: boolean; fallback?: string;
+function Card({ label, esi, highlight, fallback }: {
+  label: string; esi: number | null; highlight?: boolean; fallback?: string;
 }) {
   return (
-    <div className={clsx("bg-surface border px-3 py-3 text-center",
-                         accent ? "border-accent" : "border-rule")}>
-      <div className="mono text-[9px] tracking-widest text-ink3 uppercase">{label}</div>
-      <div className="text-[27px] font-semibold leading-tight">{value ?? "—"}</div>
-      <div className="text-[11px] text-ink3">
-        {value ? ESI_LABEL[value] : fallback ?? ""}
-      </div>
+    <div className={clsx("rounded-lg border-2 p-4 text-center",
+                         highlight ? "border-brand bg-brandsoft" : "border-line bg-card")}>
+      <div className="text-[14px] text-ink2">{label}</div>
+      <div className="text-[36px] font-bold leading-tight">{esi ?? "—"}</div>
+      <div className="text-[14px] text-ink2">{esi ? ESI_SHORT[esi] : fallback ?? ""}</div>
     </div>
   );
 }
 
-function OutcomeBanner({ outcome }: { outcome: Outcome }) {
-  const c = OUTCOME_COPY[outcome];
+function Banner({ outcome }: { outcome: Outcome }) {
+  const c = OUTCOME[outcome];
   const tones: Record<string, string> = {
-    accent: "border-accent text-accent",
-    signal: "border-signal text-signal",
-    critical: "border-critical text-critical",
+    ok: "border-ok bg-oksoft text-ok",
+    warn: "border-warn bg-warnsoft text-warn",
+    danger: "border-danger bg-dangersoft text-danger",
   };
   return (
-    <div className={clsx("border-l-2 bg-surface px-3.5 py-3", tones[c.tone])}>
-      <div className="text-[13px] font-semibold">{c.title}</div>
-      <div className="text-[12px] text-ink2 mt-1 leading-relaxed">{c.body}</div>
+    <div className={clsx("rounded-lg border-2 p-4", tones[c.tone])}>
+      <p className="text-[16px] font-semibold">{c.title}</p>
+      <p className="text-[15px] text-ink2 mt-1 leading-relaxed">{c.body}</p>
     </div>
   );
 }

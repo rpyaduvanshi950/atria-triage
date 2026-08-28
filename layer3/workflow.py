@@ -16,6 +16,7 @@ reads the answer cannot disagree with it, and the comparison would be theatre.
 """
 from __future__ import annotations
 
+import secrets
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -58,6 +59,12 @@ class Assessment:
     clinician: str = ""
     #: how many times this patient has been re-assessed from scratch
     cycle: int = 1
+    #: Issued only once a nurse ESI is durably stored, and required by reveal.
+    #: This makes the ordering a server-enforced invariant rather than something
+    #: the client merely happens to call in the right sequence: no token exists
+    #: until the assessment is recorded, so a reveal cannot be forged by
+    #: replaying requests or by a client that skips a step. (Build plan §6.2.)
+    reveal_token: str = ""
 
     # --- what the nurse is allowed to see -----------------------------------
 
@@ -74,6 +81,8 @@ class Assessment:
         base = dict(stay_id=self.stay_id, stage=self.stage.value, cycle=self.cycle,
                     nurse_esi=self.nurse_esi, revealed=self.revealed,
                     guardrail=self.guardrail)
+        # the token is returned once, by the endpoint that mints it — never
+        # again in a general view payload
         if not self.revealed:
             return base
         return dict(base, atria_esi=self.atria_esi,
@@ -88,7 +97,7 @@ class Assessment:
 
     # --- transitions ---------------------------------------------------------
 
-    def submit_nurse_esi(self, esi: int) -> None:
+    def submit_nurse_esi(self, esi: int) -> str:
         if self.stage is not Stage.AWAITING_NURSE:
             raise BlindAssessmentError(
                 f"stay {self.stay_id} is already at {self.stage.value}; "
@@ -96,13 +105,25 @@ class Assessment:
         if not 1 <= esi <= 5:
             raise ValueError(f"ESI must be 1-5, got {esi}")
         self.nurse_esi = esi
+        # a fresh token per submission, so an earlier one cannot be replayed
+        self.reveal_token = secrets.token_urlsafe(16)
+        return self.reveal_token
 
     def reveal(self, atria_esi: int | None, *, abstained: bool = False,
-               guardrail: bool = False) -> Outcome:
-        """Reveal ATRIA and resolve the comparison. Requires a nurse ESI first."""
+               guardrail: bool = False, token: str | None = None) -> Outcome:
+        """
+        Reveal ATRIA and resolve the comparison.
+
+        Requires the token issued when the nurse's ESI was stored. Callers inside
+        the process may omit it; anything reaching this over HTTP must present it.
+        """
         if self.nurse_esi is None:
             raise BlindAssessmentError(
                 f"stay {self.stay_id}: cannot reveal before the nurse has chosen")
+        if token is not None and token != self.reveal_token:
+            raise BlindAssessmentError(
+                f"stay {self.stay_id}: reveal token does not match the stored "
+                f"assessment")
         self.atria_esi = atria_esi
         self.atria_abstained = abstained
         self.guardrail = guardrail
@@ -151,6 +172,7 @@ class Assessment:
         self.outcome = None
         self.reason_code = ""
         self.final_esi = None
+        self.reveal_token = ""      # a new cycle needs a new token
         self.cycle += 1
         self.reopened_because = why
 

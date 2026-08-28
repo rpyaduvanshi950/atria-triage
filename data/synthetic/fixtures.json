@@ -1,0 +1,288 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "description": "Named patient fixtures from PRD Appendix B. Each fixture exercises a specific acceptance scenario. Feed these to the test suite and the demo mode.",
+    "note": "All patients are fictional. Any resemblance to real individuals is unintentional."
+  },
+
+  "patients": [
+    {
+      "id": "pediatric_control",
+      "name": "Aarav Kumar",
+      "scenario": "Paediatric patient — age-banded vital thresholds must differ from adult",
+      "stay_id": 90001,
+      "age": 4,
+      "gender": "M",
+      "chiefcomplaint": "Cough and wheeze for 2 days",
+      "arrival_transport": "walk-in",
+      "vitals": {
+        "temperature": 38.2,
+        "heartrate": 125,
+        "resprate": 32,
+        "o2sat": 95,
+        "sbp": 88,
+        "dbp": 56,
+        "pain": 3,
+        "gcs": 15
+      },
+      "expected": {
+        "rf13_fires": false,
+        "rf03_fires": false,
+        "note": "RR 32 is normal for a 4-year-old (range 18–34). SBP 88 is above the paediatric threshold (70 + 2*4 = 78). An adult-calibrated engine would flag both."
+      }
+    },
+
+    {
+      "id": "older_adult_same_vitals",
+      "name": "Arthur Hale",
+      "scenario": "Older adult with the same vitals as Aarav — age-specific thresholds should produce different results",
+      "stay_id": 90002,
+      "age": 72,
+      "gender": "M",
+      "chiefcomplaint": "Cough and wheeze for 2 days",
+      "arrival_transport": "ambulance",
+      "vitals": {
+        "temperature": 38.2,
+        "heartrate": 125,
+        "resprate": 32,
+        "o2sat": 95,
+        "sbp": 88,
+        "dbp": 56,
+        "pain": 3,
+        "gcs": 15
+      },
+      "expected": {
+        "rf13_fires": true,
+        "rf03_fires": true,
+        "note": "RR 32 exceeds the adult upper limit of 30. SBP 88 is below the adult threshold of 90. Identical vitals, different patient, different flags."
+      }
+    },
+
+    {
+      "id": "missing_essential_data",
+      "name": "John Doe",
+      "scenario": "Insufficient vitals to triage — RF11 hard stop",
+      "stay_id": 90003,
+      "age": null,
+      "gender": null,
+      "chiefcomplaint": "Found unresponsive",
+      "arrival_transport": "ambulance",
+      "vitals": {
+        "temperature": null,
+        "heartrate": null,
+        "resprate": null,
+        "o2sat": 84,
+        "sbp": null,
+        "dbp": null,
+        "pain": null,
+        "gcs": null
+      },
+      "expected": {
+        "hard_stop": true,
+        "abstains": true,
+        "note": "Only 1 of 6 triageable vitals recorded. RF11 fires. ATRIA refuses to score — the patient is routed to a clinician, not given a number nobody should trust."
+      }
+    },
+
+    {
+      "id": "low_oxygen",
+      "name": "Meera Shah",
+      "scenario": "Critical hypoxaemia — RF02 red flag",
+      "stay_id": 90004,
+      "age": 55,
+      "gender": "F",
+      "chiefcomplaint": "Progressive dyspnoea over 3 hours",
+      "arrival_transport": "ambulance",
+      "vitals": {
+        "temperature": 37.8,
+        "heartrate": 110,
+        "resprate": 28,
+        "o2sat": 84,
+        "sbp": 135,
+        "dbp": 78,
+        "pain": 7,
+        "gcs": 14
+      },
+      "expected": {
+        "rf02_fires": true,
+        "band": 1,
+        "red_flag": true,
+        "note": "SpO₂ 84% is below the 90% threshold. RF02 fires. Band 1. No model can suppress this."
+      }
+    },
+
+    {
+      "id": "adult_rr_boundary",
+      "name": "Carlos Rivera",
+      "scenario": "Respiratory rate exactly at the boundary — confirms SAF-004",
+      "stay_id": 90005,
+      "age": 35,
+      "gender": "M",
+      "chiefcomplaint": "Anxiety and hyperventilation",
+      "arrival_transport": "walk-in",
+      "vitals": {
+        "temperature": 37.0,
+        "heartrate": 88,
+        "resprate": 30,
+        "o2sat": 97,
+        "sbp": 128,
+        "dbp": 76,
+        "pain": 2,
+        "gcs": 15
+      },
+      "expected": {
+        "rf13_fires_at_30": false,
+        "rf13_fires_at_31": true,
+        "note": "RR 30 is the upper edge of normal for an adult (rule: >30). RR 31 fires RF13."
+      }
+    },
+
+    {
+      "id": "sepsis_trajectory",
+      "name": "Linda Washington",
+      "scenario": "Worsening vitals trajectory — Layer 2 escalation",
+      "stay_id": 90006,
+      "age": 68,
+      "gender": "F",
+      "chiefcomplaint": "Fever, malaise, confusion since yesterday",
+      "arrival_transport": "ambulance",
+      "vitals_at_arrival": {
+        "temperature": 38.5,
+        "heartrate": 92,
+        "resprate": 20,
+        "o2sat": 95,
+        "sbp": 118,
+        "dbp": 72,
+        "pain": 5,
+        "gcs": 14
+      },
+      "vitals_at_30_minutes": {
+        "temperature": 39.1,
+        "heartrate": 115,
+        "resprate": 24,
+        "o2sat": 93,
+        "sbp": 100,
+        "dbp": 60
+      },
+      "vitals_at_60_minutes": {
+        "temperature": 39.5,
+        "heartrate": 128,
+        "resprate": 28,
+        "o2sat": 91,
+        "sbp": 88,
+        "dbp": 52
+      },
+      "expected": {
+        "layer2_escalates": true,
+        "shock_index_alert": true,
+        "note": "HR rising +36, SBP falling −30, SpO₂ falling −4 over 60 minutes. Shock index reaches 1.45. Layer 2 trajectory escalation fires."
+      }
+    },
+
+    {
+      "id": "five_hour_safeguard",
+      "name": "Thomas Chen",
+      "scenario": "Long wait — five-hour safeguard within-band modifier",
+      "stay_id": 90007,
+      "age": 45,
+      "gender": "M",
+      "chiefcomplaint": "Knee pain after fall",
+      "arrival_transport": "walk-in",
+      "vitals": {
+        "temperature": 36.8,
+        "heartrate": 72,
+        "resprate": 16,
+        "o2sat": 98,
+        "sbp": 132,
+        "dbp": 80,
+        "pain": 6,
+        "gcs": 15
+      },
+      "expected": {
+        "initial_band": 5,
+        "after_5h_modifier": true,
+        "note": "Clinically stable ESI 5. After 5 hours (300 minutes) the five-hour safeguard fires as a within-band modifier. It bumps the patient up within their band but does NOT cross a band boundary."
+      }
+    },
+
+    {
+      "id": "blind_assessment",
+      "name": "Sarah Mitchell",
+      "scenario": "The recommendation is absent, not hidden, before the nurse commits",
+      "stay_id": 90008,
+      "age": 42,
+      "gender": "F",
+      "chiefcomplaint": "Chest pain, onset 1 hour ago",
+      "arrival_transport": "ambulance",
+      "vitals": {
+        "temperature": 37.0,
+        "heartrate": 96,
+        "resprate": 18,
+        "o2sat": 96,
+        "sbp": 148,
+        "dbp": 88,
+        "pain": 8,
+        "gcs": 15
+      },
+      "expected": {
+        "atria_esi_in_payload_before_nurse": false,
+        "atria_esi_in_payload_after_nurse": true,
+        "note": "Before the nurse submits their blind ESI, the API response must not contain atria_esi at all — not null, not hidden, absent."
+      }
+    },
+
+    {
+      "id": "worsening_while_waiting",
+      "name": "David Park",
+      "scenario": "Patient deteriorates after initial assessment — worsening report clears sign-off",
+      "stay_id": 90009,
+      "age": 58,
+      "gender": "M",
+      "chiefcomplaint": "Abdominal pain",
+      "arrival_transport": "walk-in",
+      "vitals": {
+        "temperature": 37.2,
+        "heartrate": 80,
+        "resprate": 16,
+        "o2sat": 97,
+        "sbp": 140,
+        "dbp": 82,
+        "pain": 6,
+        "gcs": 15
+      },
+      "expected": {
+        "report_change_clears_sign_off": true,
+        "starts_fresh_blind_cycle": true,
+        "old_recommendation_discarded": true,
+        "note": "After sign-off, a worsening report forces a fresh blind cycle. The old ATRIA recommendation is discarded — showing it would anchor the next decision."
+      }
+    },
+
+    {
+      "id": "guardrail_override",
+      "name": "Elena Rodriguez",
+      "scenario": "Nurse overrides a guardrail flag — reason required, escalation to charge nurse",
+      "stay_id": 90010,
+      "age": 30,
+      "gender": "F",
+      "chiefcomplaint": "Known COPD exacerbation",
+      "arrival_transport": "walk-in",
+      "vitals": {
+        "temperature": 37.0,
+        "heartrate": 90,
+        "resprate": 22,
+        "o2sat": 88,
+        "sbp": 120,
+        "dbp": 70,
+        "pain": 4,
+        "gcs": 15
+      },
+      "expected": {
+        "rf02_fires": true,
+        "nurse_override_needs_reason": true,
+        "outcome": "guardrail",
+        "note": "SpO₂ 88% fires RF02. The nurse knows this is the patient's baseline COPD sat. They can override, but must give a reason (known_baseline) and the override is audited."
+      }
+    }
+  ]
+}

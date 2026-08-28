@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atria.accenture.com/schemas/audit-event/v1",
+  "title": "AuditEvent",
+  "description": "One entry in the append-only, hash-chained audit trail. Each entry embeds the hash of its predecessor so any edit or deletion is detectable. A correction creates a new linked event — it never rewrites an old one.",
+  "type": "object",
+  "required": ["seq", "at", "kind", "stay_id", "prev_hash", "hash"],
+  "properties": {
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonically increasing sequence number."
+    },
+    "at": {
+      "type": "string",
+      "description": "Timestamp of the event (ISO 8601 or Pandas Timestamp string)."
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "arrival", "escalation", "seen", "departure",
+        "nurse_assessment", "atria_reveal", "sign_off",
+        "override", "worsening_reported", "abstain",
+        "charge_nurse_escalation", "charge_nurse_acknowledgement"
+      ],
+      "description": "Type of audit event."
+    },
+    "stay_id": {
+      "type": "integer",
+      "description": "Encounter this event belongs to."
+    },
+    "prev_hash": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "description": "SHA-256 hash of the preceding entry. Genesis entry uses 64 zeros."
+    },
+    "hash": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "description": "SHA-256 hash of this entry (excluding the hash field itself)."
+    },
+    "payload": {
+      "type": "object",
+      "description": "Event-specific structured data. Contents vary by kind.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,37 @@
+# ATRIA — reassessment intervals and escalation policy.
+#
+# Safe waiting time per priority band, in minutes. Breaching
+# triggers a recheck flag; exceeding the grace period escalates to
+# the charge nurse with an audited acknowledgement event (REA-008).
+#
+# These are human-factors defaults for a prototype, not clinical
+# standards. They must be validated and made site-configurable.
+version: "1.0.0"
+
+# Minutes before a recheck is flagged, by ESI band.
+reassessment_minutes:
+  1: 5
+  2: 15
+  3: 45
+  4: 90
+  5: 180
+
+# Grace period multiplier. After reassessment_minutes × grace_multiplier
+# with no human re-look, the system escalates to the charge nurse.
+# Example: ESI 3 → 45m recheck due, 45 × 2.0 = 90m → charge nurse alert.
+grace_multiplier: 2.0
+
+# How the charge-nurse escalation works:
+#   1. recheck_due flag is set when waited > reassessment_minutes
+#   2. charge_nurse_alert is set when waited > reassessment_minutes × grace_multiplier
+#   3. An audited event (kind: charge_nurse_escalation) is appended
+#   4. The charge nurse must acknowledge, creating a second audited event
+#      (kind: charge_nurse_acknowledgement)
+#   5. Until acknowledged, the patient is visually highlighted on the board
+escalation:
+  # Whether to enable charge-nurse escalation (can be disabled per site)
+  enabled: true
+  # Audit event kind when escalation fires
+  event_kind: "charge_nurse_escalation"
+  # Audit event kind when the charge nurse acknowledges
+  ack_event_kind: "charge_nurse_acknowledgement"

@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atria.accenture.com/schemas/atria-assessment/v1",
+  "title": "AtriaAssessment",
+  "description": "The system's recommendation for one patient — the output of the orchestrator after guardrails, inference, and comparison with the nurse's blind ESI. Shape matches PRD §10.2.",
+  "type": "object",
+  "required": ["stay_id", "stage", "cycle", "nurse_esi", "revealed"],
+  "properties": {
+    "stay_id": {
+      "type": "integer"
+    },
+    "stage": {
+      "type": "string",
+      "enum": ["awaiting_nurse", "compared", "signed"],
+      "description": "Where the blind-assessment workflow currently is."
+    },
+    "cycle": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "How many times this patient has been reassessed from scratch."
+    },
+    "nurse_esi": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "maximum": 5,
+      "description": "The nurse's blind ESI selection. Null only before they choose."
+    },
+    "revealed": {
+      "type": "boolean",
+      "description": "False while ATRIA is locked. When false, no recommendation field exists in this payload."
+    },
+    "guardrail": {
+      "type": "boolean",
+      "description": "True if a Layer 0 red flag fired on recorded values."
+    },
+    "atria_esi": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "maximum": 5,
+      "description": "ATRIA's recommended ESI. Null when abstained. ABSENT (not null) before reveal."
+    },
+    "atria_abstained": {
+      "type": "boolean",
+      "description": "True when ATRIA refused to score (insufficient data or ambiguous presentation)."
+    },
+    "outcome": {
+      "type": ["string", "null"],
+      "enum": ["match", "nurse_escalation", "nurse_downgrade", "guardrail", "uncertain", null],
+      "description": "Result of comparing nurse ESI with ATRIA recommendation."
+    },
+    "needs_reason": {
+      "type": "boolean",
+      "description": "True when the nurse must provide a structured reason before sign-off."
+    },
+    "final_esi": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "maximum": 5,
+      "description": "The signed-off ESI after the nurse confirms. Null until signed."
+    },
+    "reason_code": {
+      "type": "string",
+      "description": "Structured reason code when the nurse diverges from ATRIA."
+    },
+    "probabilities": {
+      "type": ["object", "null"],
+      "description": "Calibrated class probabilities from the inference service.",
+      "properties": {
+        "esi_1": { "type": "number" },
+        "esi_2": { "type": "number" },
+        "esi_3": { "type": "number" },
+        "esi_4": { "type": "number" },
+        "esi_5": { "type": "number" }
+      }
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["HIGH", "MODERATE", "LOW"]
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Plain-language reasons from a fixed vocabulary. Never free text."
+    },
+    "model_version": {
+      "type": ["string", "null"]
+    }
+  }
+}

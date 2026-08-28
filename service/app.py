@@ -119,6 +119,76 @@ async def audit(limit: int = 60) -> JSONResponse:
     })
 
 
+# --- patient check-in and vitals (PRD §16.2) --------------------------------
+
+@app.post("/v1/encounters")
+async def create_encounter(stay_id: int, age: float | None = None,
+                           gender: str | None = None,
+                           chiefcomplaint: str = "unspecified",
+                           arrival_transport: str = "walk-in") -> JSONResponse:
+    """Check in a new patient. In demo mode, arrivals come from the replay clock;
+    this endpoint lets external integrations and the acceptance test suite inject
+    patients directly."""
+    from service.clock import Event
+    import pandas as _pd
+
+    payload = dict(age=age, gender=gender, chiefcomplaint=chiefcomplaint,
+                   arrival_transport=arrival_transport)
+    now = engine.now or _pd.Timestamp.now()
+    event = Event(at=now, kind="arrival", stay_id=stay_id, payload=payload)
+    engine.on_arrival(event)
+    await _broadcast()
+    p = engine.patients.get(stay_id)
+    if p is None:
+        return JSONResponse({"error": "patient not found after check-in"}, status_code=500)
+    return JSONResponse(p.as_dict(now))
+
+
+@app.post("/v1/encounters/{stay_id}/observations")
+async def submit_observation(stay_id: int,
+                             heartrate: float | None = None,
+                             resprate: float | None = None,
+                             o2sat: float | None = None,
+                             sbp: float | None = None,
+                             dbp: float | None = None,
+                             temperature: float | None = None) -> JSONResponse:
+    """Submit a vitals observation for a checked-in patient."""
+    import pandas as _pd
+    from service.clock import Event
+
+    now = engine.now or _pd.Timestamp.now()
+    payload = dict(stay_id=stay_id, charttime=now,
+                   heartrate=heartrate, resprate=resprate, o2sat=o2sat,
+                   sbp=sbp, dbp=dbp, temperature=temperature)
+    event = Event(at=now, kind="vitals", stay_id=stay_id, payload=payload)
+    result = engine.on_vitals(event)
+    await _broadcast()
+    return JSONResponse(result or {"status": "recorded"})
+
+
+# --- REA-008: charge-nurse acknowledgement -----------------------------------
+
+@app.post("/v1/charge-nurse/{stay_id}/acknowledge")
+async def charge_nurse_ack(stay_id: int,
+                           clinician: str = "charge.nurse.demo") -> JSONResponse:
+    """The charge nurse acknowledges an overdue reassessment alert (REA-008)."""
+    p = engine.patients.get(stay_id)
+    if p is None:
+        return JSONResponse({"error": "patient not found"}, status_code=404)
+    engine.audit.append(
+        "charge_nurse_acknowledgement", stay_id, engine.now,
+        clinician=clinician, band=p.band,
+        overdue_by=round(p.overdue_by),
+    )
+    # Clear the escalation flag so it doesn't re-fire
+    if hasattr(p, '_charge_escalated'):
+        p._charge_escalated = False
+    await _broadcast()
+    return JSONResponse({"status": "acknowledged", "stay_id": stay_id,
+                         "clinician": clinician})
+
+
+
 # --- blind nurse-first assessment (PRD 16.2) --------------------------------
 
 @app.post("/v1/encounters/{stay_id}/nurse-assessments")
@@ -131,10 +201,15 @@ async def nurse_assessment(stay_id: int, esi: int) -> JSONResponse:
 
 
 @app.post("/v1/assessments/{stay_id}/reveal")
-async def reveal(stay_id: int) -> JSONResponse:
-    """Reveal ATRIA. Refuses if the nurse has not committed."""
+async def reveal(stay_id: int, reveal_token: str = "") -> JSONResponse:
+    """
+    Reveal ATRIA. Refuses if the nurse has not committed.
+
+    The token comes from the nurse-assessment response. Requiring it means a
+    reveal cannot be produced by a client that skips or reorders the flow.
+    """
     try:
-        payload = engine.reveal(stay_id)
+        payload = engine.reveal(stay_id, token=reveal_token or None)
     except BlindAssessmentError as exc:
         return JSONResponse({"error": str(exc)}, status_code=409)
     await _broadcast()

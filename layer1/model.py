@@ -162,6 +162,56 @@ class AcuityScorer:
         self.metrics["unsafe_missing_fields"] = list(self.unsafe_missing)
         return self
 
+    # --- persistence (Build Plan §2a) ----------------------------------------
+
+    def save(self, directory: str | Path = "ml/models") -> Path:
+        """Persist the trained model artifact alongside a manifest.json recording
+        model_version, training data hash, calibration parameters, and the
+        feature schema it expects (PRD §2a / §14)."""
+        import hashlib
+        import json
+        import pickle
+        from datetime import datetime, timezone
+
+        d = Path(directory)
+        d.mkdir(parents=True, exist_ok=True)
+
+        version = datetime.now(timezone.utc).strftime("v%Y%m%d-%H%M%S")
+        model_path = d / "model.pkl"
+        manifest_path = d / "manifest.json"
+
+        with open(model_path, "wb") as fh:
+            pickle.dump(self, fh)
+
+        # Compute a hash of the serialised model for integrity checks
+        model_hash = hashlib.sha256(model_path.read_bytes()).hexdigest()
+
+        manifest = {
+            "model_version": version,
+            "model_file": model_path.name,
+            "model_hash_sha256": model_hash,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "feature_schema": self.columns,
+            "n_features": len(self.columns),
+            "sensitivity_target": self.sensitivity_target,
+            "alpha": self.alpha,
+            "threshold": round(self.threshold, 6),
+            "band_cuts": [round(c, 6) for c in self.band_cuts],
+            "metrics": self.metrics,
+            "unsafe_missing_fields": list(self.unsafe_missing),
+            "features_dropped": list(self.metrics_dropped),
+        }
+        manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
+        return model_path
+
+    @classmethod
+    def load(cls, directory: str | Path = "ml/models") -> "AcuityScorer":
+        """Load a previously saved model artifact."""
+        import pickle
+        model_path = Path(directory) / "model.pkl"
+        with open(model_path, "rb") as fh:
+            return pickle.load(fh)
+
     @staticmethod
     def _groups(X: pd.DataFrame) -> np.ndarray:
         """

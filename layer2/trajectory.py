@@ -32,6 +32,11 @@ SHOCK_INDEX_ALERT = 0.9          # HR/SBP >= 0.9 is a recognised concern thresho
 # PRD REA-002. Configuration, not UI constants: a site may set its own.
 REASSESS_MINUTES = {1: 5, 2: 15, 3: 45, 4: 90, 5: 180}
 
+# REA-008. Grace-period multiplier before charge-nurse escalation.
+# After reassessment_minutes × CHARGE_NURSE_GRACE_MULTIPLIER, the system
+# escalates to the charge nurse with an audited acknowledgement event.
+CHARGE_NURSE_GRACE_MULTIPLIER = 2.0
+
 
 @dataclass
 class Trend:
@@ -43,6 +48,8 @@ class Trend:
     #: past the safe wait for their band — needs a human re-look, which is not
     #: the same as being sicker
     needs_reassessment: bool = False
+    #: REA-008 — past the grace period; charge nurse must be alerted
+    charge_nurse_alert: bool = False
     readings: int = 0
 
     @property
@@ -53,7 +60,8 @@ class Trend:
         return dict(proposed_band=self.proposed_band, reasons=list(self.reasons),
                     shock_index=round(self.shock_index, 2) if self.shock_index else None,
                     overdue_by=round(self.overdue_by, 1),
-                    needs_reassessment=self.needs_reassessment, readings=self.readings)
+                    needs_reassessment=self.needs_reassessment,
+                    charge_nurse_alert=self.charge_nurse_alert, readings=self.readings)
 
 
 def _window(history: pd.DataFrame, now: pd.Timestamp, minutes: int) -> pd.DataFrame:
@@ -116,6 +124,13 @@ def assess(
     if waited > safe:
         t.overdue_by = waited - safe
         t.needs_reassessment = True
+        # REA-008: charge-nurse escalation after the grace period
+        grace_limit = safe * CHARGE_NURSE_GRACE_MULTIPLIER
+        if waited >= grace_limit and safe > 0:
+            t.charge_nurse_alert = True
+            reasons.append(
+                f"REA-008 overdue {waited:.0f}m ({waited / safe:.1f}x safe wait) — "
+                f"charge nurse escalation")
         if waited >= 3 * safe and safe > 0:
             proposed = min(proposed, max(1, current_band - 1))
             reasons.append(

@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atria.accenture.com/schemas/clinical-snapshot/v1",
+  "title": "ClinicalSnapshot",
+  "description": "Point-in-time clinical observation for one patient. The input to both Layer 0 (guardrails) and Layer 1 (inference). Every field that can be absent is nullable — missingness is signal, not a fault.",
+  "type": "object",
+  "required": ["stay_id", "observed_at"],
+  "properties": {
+    "stay_id": {
+      "type": "integer",
+      "description": "Unique encounter identifier."
+    },
+    "observed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When these observations were recorded."
+    },
+    "age": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 120,
+      "description": "Patient age in years. Null when unknown — age-banded thresholds fall back to adult defaults."
+    },
+    "gender": {
+      "type": ["string", "null"],
+      "enum": ["M", "F", null],
+      "description": "Biological sex for physiological reference ranges. Not gender identity."
+    },
+    "temperature": {
+      "type": ["number", "null"],
+      "description": "Body temperature in °C. Null means not taken, never imputed as normal."
+    },
+    "heartrate": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "description": "Heart rate in bpm."
+    },
+    "resprate": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "description": "Respiratory rate per minute."
+    },
+    "o2sat": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Peripheral oxygen saturation (SpO₂), percentage."
+    },
+    "sbp": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "description": "Systolic blood pressure in mmHg."
+    },
+    "dbp": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "description": "Diastolic blood pressure in mmHg."
+    },
+    "gcs": {
+      "type": ["integer", "null"],
+      "minimum": 3,
+      "maximum": 15,
+      "description": "Glasgow Coma Scale. Null when not assessed."
+    },
+    "pain": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 10,
+      "description": "Pain score 0–10."
+    },
+    "chiefcomplaint": {
+      "type": ["string", "null"],
+      "description": "Free-text chief complaint. Not a model input — context only."
+    },
+    "arrival_transport": {
+      "type": ["string", "null"],
+      "description": "How the patient arrived (e.g. ambulance, walk-in)."
+    },
+    "active_seizure": { "type": ["boolean", "null"] },
+    "airway_compromise": { "type": ["boolean", "null"] },
+    "uncontrolled_haemorrhage": { "type": ["boolean", "null"] },
+    "anaphylaxis": { "type": ["boolean", "null"] },
+    "stroke_signs": { "type": ["boolean", "null"] },
+    "symptom_onset_minutes": { "type": ["number", "null"] },
+    "eclampsia": { "type": ["boolean", "null"] },
+    "retractions": { "type": ["boolean", "null"] }
+  },
+  "additionalProperties": false
+}

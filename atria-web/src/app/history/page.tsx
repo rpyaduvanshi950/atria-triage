@@ -27,16 +27,16 @@ export default function HistoryPage() {
     <>
       <div className="flex items-baseline gap-5 flex-wrap mb-3">
         <div>
-          <span className="mono text-[9.5px] tracking-widest uppercase text-ink3">Chain</span>
-          <div className={data?.intact ? "text-accent text-[19px] font-semibold"
-                                       : "text-critical text-[19px] font-semibold"}>
-            {data ? (data.intact ? "intact" : "BROKEN") : "…"}
+          <span className="text-[14px] text-ink2">Record</span>
+          <div className={data?.intact ? "text-ok text-[22px] font-bold"
+                                       : "text-danger text-[22px] font-bold"}>
+            {data ? (data.intact ? "Complete and unaltered" : "ALTERED") : "…"}
           </div>
         </div>
-        <p className="text-[12px] text-ink2 max-w-2xl leading-relaxed">
-          {data?.note}. Append-only: a correction creates a new linked event, it never
-          rewrites an old one. This is what makes a clinical decision reconstructable
-          months later.
+        <p className="text-[15px] text-ink2 max-w-2xl leading-relaxed">
+          Nothing here can be edited or deleted. A correction is added as a new
+          entry linked to the old one, so months later you can still see exactly
+          what was decided and what it was based on.
         </p>
       </div>
 
@@ -44,23 +44,23 @@ export default function HistoryPage() {
         {(["audit", "general"] as const).map((m) => (
           <button key={m} onClick={() => setMode(m)}
                   className={m === mode
-                    ? "px-3 py-1.5 text-[12.5px] border border-accent text-accent"
-                    : "px-3 py-1.5 text-[12.5px] border border-rule text-ink3 hover:text-ink2"}>
-            {m === "audit" ? "Decisions" : "Everything"}
+                    ? "px-4 py-2.5 rounded-lg text-[15px] border-2 border-brand bg-brandsoft text-brand font-semibold"
+                    : "px-4 py-2.5 rounded-lg text-[15px] border-2 border-line bg-card text-ink2"}>
+            {m === "audit" ? "Decisions only" : "Everything"}
           </button>
         ))}
       </div>
-      <p className="text-[11.5px] text-ink3 mb-3 leading-relaxed max-w-3xl">
-        <b className="text-ink2">Decisions</b> shows only what a human or the model
-        decided — the audit trail proper. <b className="text-ink2">Everything</b> adds
-        arrivals, escalations and movements in time order.
+      <p className="text-[15px] text-ink2 mb-4 leading-relaxed max-w-3xl">
+        <b className="text-ink">Decisions only</b> shows what you or ATRIA decided.
+        <b className="text-ink"> Everything</b> also shows arrivals, moves up the
+        queue, and patients going through.
       </p>
 
-      <div className="border border-rule overflow-x-auto">
-        <table className="w-full text-[12px]">
+      <div className="border-2 border-line rounded-lg overflow-x-auto bg-card">
+        <table className="w-full text-[14px]">
           <thead>
-            <tr className="bg-surface2 mono text-[9.5px] tracking-widest uppercase text-ink3">
-              {["#", "time", "event", "stay", "detail", "hash", "links to"].map((h) => (
+            <tr className="bg-sunk text-[13px] text-ink2 font-semibold">
+              {["#", "Time", "What happened", "Patient", "Details", "Fingerprint", "Follows"].map((h) => (
                 <th key={h} className="text-left px-3 py-2 whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -69,18 +69,18 @@ export default function HistoryPage() {
             {(data?.events ?? []).slice().reverse().map((e) => {
               const { seq, at, kind, stay_id, hash, prev, ...rest } = e;
               return (
-                <tr key={seq} className="border-t border-rule align-top">
-                  <td className="mono px-3 py-1.5 text-ink3">{seq}</td>
-                  <td className="mono px-3 py-1.5 text-ink3">{String(at).slice(11, 19)}</td>
-                  <td className="px-3 py-1.5 whitespace-nowrap">{FRIENDLY[kind] ?? kind}</td>
-                  <td className="mono px-3 py-1.5 text-ink3">{stay_id}</td>
-                  <td className="px-3 py-1.5 text-ink2 max-w-[380px] truncate">
+                <tr key={seq} className="border-t border-line2 align-top">
+                  <td className="mono px-3 py-2 text-ink3">{seq}</td>
+                  <td className="mono px-3 py-2 text-ink3">{String(at).slice(11, 19)}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{FRIENDLY[kind] ?? kind}</td>
+                  <td className="mono px-3 py-2 text-ink3">{stay_id}</td>
+                  <td className="px-3 py-2 text-ink2 max-w-[380px] truncate">
                     {Object.entries(rest)
                       .filter(([, v]) => v !== null && v !== "" && v !== false)
                       .map(([k, v]) => `${k}=${v}`).join(", ")}
                   </td>
-                  <td className="mono px-3 py-1.5 text-accent">{String(hash).slice(0, 8)}</td>
-                  <td className="mono px-3 py-1.5 text-ink3">{String(prev).slice(0, 8)}</td>
+                  <td className="mono px-3 py-2 text-brand">{String(hash).slice(0, 8)}</td>
+                  <td className="mono px-3 py-2 text-ink3">{String(prev).slice(0, 8)}</td>
                 </tr>
               );
             })}
@@ -88,8 +88,8 @@ export default function HistoryPage() {
         </table>
       </div>
       {!data?.events.length && (
-        <p className="text-[12.5px] text-ink3 py-6 text-center">
-          No events yet — let the shift run for a moment.
+        <p className="text-[15px] text-ink2 py-8 text-center">
+          Nothing recorded yet — give the shift a moment.
         </p>
       )}
     </>

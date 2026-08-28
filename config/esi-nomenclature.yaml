@@ -1,0 +1,56 @@
+# ATRIA — ESI nomenclature.
+#
+# Emergency Severity Index levels with their clinical meaning and
+# the resource expectation each carries. This is the vocabulary
+# used everywhere ESI is mentioned: the queue, the blind-assessment
+# workflow, and the audit trail. Any display or comparison code must
+# use these labels, never ad-hoc strings.
+#
+# Clinically reviewed: pending sign-off for prototype.
+version: "1.0.0"
+
+levels:
+  1:
+    label: "Resuscitation"
+    meaning: "Needs a life-saving intervention now"
+    resources: "Immediate, multiple"
+    reassessment_minutes: 5
+    lane: "RESUS"
+
+  2:
+    label: "Emergent"
+    meaning: "High risk, or time-critical — cannot wait"
+    resources: "Multiple, urgent"
+    reassessment_minutes: 15
+    lane: "ACUTE"
+
+  3:
+    label: "Urgent"
+    meaning: "Stable enough to wait briefly; likely several resources"
+    resources: "Two or more"
+    reassessment_minutes: 45
+    lane: "ACUTE"
+
+  4:
+    label: "Less urgent"
+    meaning: "Stable; likely one resource"
+    resources: "One"
+    reassessment_minutes: 90
+    lane: "FAST TRACK"
+
+  5:
+    label: "Non-urgent"
+    meaning: "Stable; likely nothing beyond an examination"
+    resources: "None expected"
+    reassessment_minutes: 180
+    lane: "FAST TRACK"
+
+# Reason codes for nurse overrides — used when the nurse diverges
+# from ATRIA and must justify the difference.
+override_reason_codes:
+  reassessed_at_bedside: "I reassessed at the bedside"
+  clinically_well: "Vitals look alarming, the patient does not"
+  known_baseline: "These readings are normal for this patient"
+  artefact: "The reading is an artefact"
+  resource_constraint: "Triage under genuine scarcity"
+  other: "Other"

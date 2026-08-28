@@ -256,6 +256,19 @@ class QueueEngine:
         if t.needs_reassessment and patient.state == "STABLE":
             patient.state = "AWAITING"
 
+        # REA-008: charge-nurse escalation after the configurable grace period.
+        # A separate audited event, distinct from the recheck flag.
+        if t.charge_nurse_alert and not getattr(patient, '_charge_escalated', False):
+            patient._charge_escalated = True
+            self.audit.append(
+                "charge_nurse_escalation", patient.stay_id, self.now,
+                band=patient.band, overdue_by=round(t.overdue_by),
+                waited_minutes=round(patient.waited(self.now)),
+                reason="REA-008 grace period exceeded — charge nurse acknowledgement required",
+            )
+            self._tick("escalated", patient,
+                       f"overdue {t.overdue_by:.0f}m — charge nurse alerted")
+
         change = None
         if t.escalates:
             new = apply(patient.band, t.proposed_band, Source.TRAJECTORY)
@@ -344,21 +357,28 @@ class QueueEngine:
     # --- blind nurse-first assessment (PRD 5.2, 6.1, 10.1) -------------------
 
     def nurse_assess(self, stay_id: int, esi: int) -> dict:
-        """The nurse commits to an ESI. ATRIA is still hidden at this point."""
+        """
+        The nurse commits to an ESI. ATRIA is still hidden at this point.
+
+        Returns a one-time reveal token alongside the stored assessment. The
+        token exists only because the assessment was durably recorded, which is
+        what makes the ordering a server invariant rather than a convention.
+        """
         a = self.workflow.open(stay_id)
-        a.submit_nurse_esi(esi)
+        token = a.submit_nurse_esi(esi)
         self.audit.append("nurse_assessment", stay_id, self.now,
                           nurse_esi=esi, cycle=a.cycle, blind=True)
-        return a.visible_to_nurse()
+        return {**a.visible_to_nurse(), "reveal_token": token}
 
-    def reveal(self, stay_id: int) -> dict:
+    def reveal(self, stay_id: int, token: str | None = None) -> dict:
         """Reveal ATRIA and resolve the comparison. Refuses to run early."""
         a = self.workflow.open(stay_id)
         p = self.patients.get(stay_id) or self.in_treatment.get(stay_id)
         if p is None:
             raise KeyError(stay_id)
         outcome = a.reveal(p.band if not p.abstained else None,
-                           abstained=p.abstained, guardrail=bool(p.red_flag))
+                           abstained=p.abstained, guardrail=bool(p.red_flag),
+                           token=token)
         self.audit.append("atria_reveal", stay_id, self.now,
                           nurse_esi=a.nurse_esi, atria_esi=a.atria_esi,
                           outcome=outcome.value, needs_reason=a.needs_reason,

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atria.accenture.com/schemas/nurse-assessment/v1",
+  "title": "NurseAssessment",
+  "description": "The nurse's blind ESI commitment. Submitted before ATRIA is revealed. The payload intentionally carries no recommendation — not hidden, absent.",
+  "type": "object",
+  "required": ["stay_id", "esi"],
+  "properties": {
+    "stay_id": {
+      "type": "integer"
+    },
+    "esi": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Emergency Severity Index level chosen by the nurse."
+    },
+    "clinician": {
+      "type": "string",
+      "description": "Identity of the assessing nurse."
+    },
+    "assessed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

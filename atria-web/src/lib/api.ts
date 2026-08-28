@@ -46,9 +46,16 @@ export const api = {
       { method: "POST" },
     ),
 
-  /** 409 if the nurse has not committed yet. That guard lives on the server. */
-  reveal: (stayId: number) =>
-    request<AssessmentView>(`/v1/assessments/${stayId}/reveal`, { method: "POST" }),
+  /**
+   * 409 if the nurse has not committed, or if the token does not match.
+   * The token is minted only when the assessment is stored, so the order is a
+   * server invariant rather than a convention this client happens to follow.
+   */
+  reveal: (stayId: number, revealToken = "") =>
+    request<AssessmentView>(
+      `/v1/assessments/${stayId}/reveal?reveal_token=${encodeURIComponent(revealToken)}`,
+      { method: "POST" },
+    ),
 
   /** 422 when the outcome requires a reason and none was given. */
   finalize: (stayId: number, reasonCode = "") =>

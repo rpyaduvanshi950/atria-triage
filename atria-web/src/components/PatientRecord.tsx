@@ -1,64 +1,77 @@
 "use client";
 
 import clsx from "clsx";
-import { VITAL_REF, type QueueRow } from "@/types/atria";
+import { PATHWAY_NAME, VITAL_INFO } from "@/types/copy";
+import type { QueueRow } from "@/types/atria";
 
 export function PatientRecord({ row }: { row: QueueRow }) {
   return (
     <div>
-      <p className="text-[13.5px] font-semibold">
-        {row.complaint}
-        <span className="mono text-[11px] text-ink3 font-normal ml-2">
-          {row.age !== null ? `${Math.round(row.age)}${row.gender ?? ""}` : "—"} · waited {row.waited}m
-        </span>
-      </p>
+      <div className="bg-card border-2 border-line rounded-lg p-4">
+        <div className="text-[18px] font-semibold">{row.complaint}</div>
+        <div className="text-[15px] text-ink2 mt-0.5">
+          {row.age !== null ? `${Math.round(row.age)} years, ${row.gender ?? "—"}` : "Age unknown"}
+          {" · "}waiting {row.waited} min
+        </div>
+      </div>
 
-      <div className="grid grid-cols-2 gap-1.5 mt-2.5">
-        {Object.entries(VITAL_REF).map(([key, ref]) => {
+      <h3 className="text-[15px] font-semibold mt-5 mb-2">Latest vitals</h3>
+      <div className="grid grid-cols-2 gap-2">
+        {Object.entries(VITAL_INFO).map(([key, info]) => {
           const v = row.vitals[key as keyof typeof row.vitals];
           const missing = v === undefined || v === null;
           return (
             <div key={key}
-                 className={clsx("bg-surface border px-2.5 py-2",
-                                 missing ? "border-dashed border-signal" : "border-rule")}>
-              <div className="mono text-[9px] tracking-widest uppercase text-ink3">{ref.label}</div>
-              <div className={clsx("mono leading-tight",
-                                   missing ? "text-[12px] text-signal" : "text-[17px]")}>
-                {missing ? "not taken" : v}
-              </div>
-              <div className="mono text-[9px] text-ink3">
-                {missing ? "must be measured" : `normal ${ref.range} ${ref.unit}`}
-              </div>
+                 className={clsx("rounded-lg border-2 p-3",
+                                 missing ? "border-warn bg-warnsoft" : "border-line bg-card")}>
+              <div className="text-[13px] text-ink2">{info.label}</div>
+              {missing ? (
+                <>
+                  <div className="text-[16px] font-semibold text-warn leading-tight mt-0.5">
+                    Not taken
+                  </div>
+                  <div className="text-[13px] text-warn">Please measure</div>
+                </>
+              ) : (
+                <>
+                  <div className="text-[24px] font-bold leading-tight mt-0.5">
+                    {v}<span className="text-[13px] font-normal text-ink3 ml-1">{info.unit}</span>
+                  </div>
+                  <div className="text-[13px] text-ink3">normal {info.normal}</div>
+                </>
+              )}
             </div>
           );
         })}
       </div>
 
-      <h3 className="mono text-[10.5px] tracking-widest uppercase text-ink3 border-b border-rule pb-1.5 mt-4 mb-2">
-        Why this band
-      </h3>
-      <p className="text-[12px] text-ink2 leading-relaxed">
-        {row.red_flag || row.reasons.join(" · ") || "—"}
+      <h3 className="text-[15px] font-semibold mt-5 mb-2">Why this priority</h3>
+      <p className="text-[15px] text-ink2 leading-relaxed">
+        {row.red_flag || row.reasons.join(". ") || "Nothing unusual in the vitals."}
       </p>
+
       {row.pathway && (
-        <p className="text-[11.5px] text-ink3 mt-1.5">
-          Pathway engaged: <b className="text-ink2">{row.pathway}</b> — which of the
-          three gates (lungs, heart, brain) is closing.
+        <p className="text-[15px] mt-2 px-3 py-2 rounded-lg bg-sunk">
+          {PATHWAY_NAME[row.pathway] ?? row.pathway}
         </p>
       )}
+
       {row.missing.length > 0 && (
-        <p className="border-l-2 border-signal bg-surface px-3 py-2 mt-2.5 text-[11.5px] text-signal">
-          Never measured: {row.missing.join(", ")}. A missing vital is never read as a normal one.
+        <p className="text-[15px] mt-3 px-3 py-2.5 rounded-lg bg-warnsoft text-warn">
+          <b>{row.missing.join(", ")} never measured.</b> A missing reading is
+          never treated as a normal one.
         </p>
       )}
+
       {row.abstained && (
-        <p className="border-l-2 border-critical bg-surface px-3 py-2 mt-2 mono text-[11px] text-critical leading-relaxed">
-          {row.abstain_reason || "system abstained"}
+        <p className="text-[15px] mt-3 px-3 py-2.5 rounded-lg bg-dangersoft text-danger">
+          <b>ATRIA will not give a score for this patient.</b> {row.abstain_reason}
         </p>
       )}
+
       {row.conflicts.map((c) => (
-        <p key={c} className="border-l-2 border-critical bg-surface px-3 py-2 mt-2 text-[11.5px] text-critical leading-relaxed">
-          <b>Treatment conflict</b> — {c}
+        <p key={c} className="text-[15px] mt-3 px-3 py-2.5 rounded-lg bg-dangersoft text-danger">
+          <b>Careful — two problems that pull against each other.</b> {c}
         </p>
       ))}
     </div>

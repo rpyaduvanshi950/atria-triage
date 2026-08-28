@@ -6,6 +6,7 @@ import { useFlip } from "@/lib/useFlip";
 import { QueueRowCard } from "@/components/QueueRow";
 import { BlindAssessment } from "@/components/BlindAssessment";
 import { PatientRecord } from "@/components/PatientRecord";
+import { LANE_NAME } from "@/types/copy";
 import type { QueueRow } from "@/types/atria";
 
 export default function AssessmentPage() {
@@ -33,52 +34,50 @@ export default function AssessmentPage() {
 
   if (!snapshot) {
     return (
-      <p className="mono text-[13px] text-ink3 py-16 text-center">
-        {status === "live" ? "waiting for the first arrival…" : "connecting to the engine…"}
+      <p className="text-[16px] text-ink2 py-20 text-center">
+        {status === "live" ? "Waiting for the first patient…" : "Connecting…"}
       </p>
     );
   }
 
   return (
     <>
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-px bg-rule border border-rule mb-4">
-        <Stat label="Waiting" value={snapshot.waiting} hint="Patients in the queue right now." />
-        <Stat label="In a bay" value={`${snapshot.in_treatment}/${snapshot.slots}`}
-              hint="Treatment spaces occupied. When one frees, the highest-priority waiting patient is taken through." />
-        <Stat label="Seen" value={snapshot.seen} hint="Treated and discharged this shift." />
-        <Stat label="Escalated" value={snapshot.escalated}
-              hint="Times a machine raised someone's priority. It can never lower one." />
-        <Stat label="Abstained" value={snapshot.abstained}
-              hint="Times ATRIA refused to score — too little data, or the picture fits more than one pathway." />
-        <Stat label="p95" value={snapshot.p95_ms ? `${snapshot.p95_ms}ms` : "–"}
-              hint="Scoring latency, 95th percentile. Budget is 400ms." />
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+        <Stat label="Waiting" value={snapshot.waiting} hint="Patients in the queue now." />
+        <Stat label="In a room" value={`${snapshot.in_treatment} of ${snapshot.slots}`}
+              hint="Rooms in use. When one frees up, the most urgent waiting patient goes next." />
+        <Stat label="Seen today" value={snapshot.seen} hint="Treated and sent home or admitted." />
+        <Stat label="Moved up" value={snapshot.escalated}
+              hint="Patients ATRIA moved to a higher priority. It can never move anyone down." />
+        <Stat label="Needs you" value={snapshot.abstained}
+              hint="ATRIA would not give a score — too little information to be safe." />
       </div>
 
       {snapshot.degraded && (
-        <div className="border-l-2 border-critical bg-surface px-4 py-3 mb-4 text-[13px]">
-          <b className="text-critical">Model service down.</b>{" "}
-          <span className="text-ink2">
-            Layer 0 is still gating on hard rules, offline. Every score drops to LOW
-            confidence, because the thing that produced confidence is gone.
+        <div className="rounded-lg border-2 border-danger bg-dangersoft px-4 py-3.5 mb-5">
+          <b className="text-danger text-[16px]">Suggestions are off.</b>{" "}
+          <span className="text-ink2 text-[15px]">
+            The safety rules are still running and will still flag a critical
+            patient. You will not see a suggested priority until they are back on.
           </span>
         </div>
       )}
 
-      <div className="flex gap-5 mono text-[11px] text-ink3 border-y border-rule py-2 mb-3 flex-wrap">
+      <div className="flex gap-6 text-[15px] text-ink2 mb-4 flex-wrap items-center">
         {Object.entries(snapshot.lanes).map(([lane, n]) => (
-          <span key={lane}>{lane} <b className="text-ink2">{n}</b></span>
+          <span key={lane}>{LANE_NAME[lane] ?? lane} <b className="text-ink">{n}</b></span>
         ))}
-        <span className="ml-auto">RESUS never queues behind anyone</span>
+        <span className="ml-auto text-[14px] text-ink3">
+          Resus patients never wait behind anyone else
+        </span>
       </div>
 
       <div className="grid lg:grid-cols-[1.15fr_1.15fr_1fr] gap-5">
         <section aria-label="Attention queue">
-          <h2 className="mono text-[10.5px] tracking-widest uppercase text-ink3 border-b border-rule pb-1.5 mb-2">
-            Attention queue
-          </h2>
-          <p className="text-[11.5px] text-ink3 mb-2.5 leading-relaxed">
-            Rank is <b>not</b> ESI. ESI is the acuity the nurse signs; rank is a live
-            sequence that changes as people wait and worsen. <span className="mono">j</span>/<span className="mono">k</span> to move.
+          <h2 className="text-[17px] font-semibold mb-1">Who to see next</h2>
+          <p className="text-[14px] text-ink2 mb-3 leading-relaxed">
+            The order changes as people wait and as their readings change. Tap a
+            patient to assess them. Keys <b>j</b> and <b>k</b> move down and up.
           </p>
           {rows.slice(0, 14).map((r) => (
             <QueueRowCard key={r.ticket} row={r} selected={r.ticket === selected?.ticket}
@@ -87,18 +86,14 @@ export default function AssessmentPage() {
         </section>
 
         <section aria-label="Nurse assessment">
-          <h2 className="mono text-[10.5px] tracking-widest uppercase text-ink3 border-b border-rule pb-1.5 mb-3">
-            Nurse assessment
-          </h2>
+          <h2 className="text-[17px] font-semibold mb-3">Your assessment</h2>
           {selected
             ? <BlindAssessment key={selected.stay_id} row={selected} onChanged={refresh} />
             : <p className="text-[13px] text-ink3">Nobody waiting.</p>}
         </section>
 
         <section aria-label="Patient record">
-          <h2 className="mono text-[10.5px] tracking-widest uppercase text-ink3 border-b border-rule pb-1.5 mb-3">
-            Patient record
-          </h2>
+          <h2 className="text-[17px] font-semibold mb-3">This patient</h2>
           {selected && <PatientRecord row={selected} />}
         </section>
       </div>
@@ -108,9 +103,9 @@ export default function AssessmentPage() {
 
 function Stat({ label, value, hint }: { label: string; value: React.ReactNode; hint: string }) {
   return (
-    <div className="bg-ground px-3 py-2.5" title={hint}>
-      <div className="mono text-[9.5px] tracking-widest uppercase text-ink3">{label}</div>
-      <div className="text-[20px] font-semibold mt-0.5">{value}</div>
+    <div className="bg-card border-2 border-line rounded-lg px-4 py-3" title={hint}>
+      <div className="text-[14px] text-ink2">{label}</div>
+      <div className="text-[26px] font-bold mt-0.5 leading-none">{value}</div>
     </div>
   );
 }

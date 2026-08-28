@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://atria.accenture.com/schemas/queue-entry/v1",
+  "title": "QueueEntry",
+  "description": "One patient's position and state in the live attention queue. Band is the safety classification; rank is the within-band ordering. Rank is NOT ESI.",
+  "type": "object",
+  "required": ["stay_id", "band", "state"],
+  "properties": {
+    "stay_id": { "type": "integer" },
+    "ticket": { "type": "string", "description": "Human-readable queue ticket (e.g. A-01)." },
+    "band": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Safety band. 1 = most urgent. Modifiers can reorder within a band but never cross one."
+    },
+    "band_before": {
+      "type": ["integer", "null"],
+      "description": "Previous band before escalation. Null if never escalated."
+    },
+    "state": {
+      "type": "string",
+      "enum": ["STABLE", "ESCALATED", "AWAITING", "IN TREATMENT"],
+      "description": "Current workflow state."
+    },
+    "lane": {
+      "type": "string",
+      "enum": ["RESUS", "ACUTE", "FAST TRACK"],
+      "description": "Physical lane assignment."
+    },
+    "red_flag": {
+      "type": ["string", "null"],
+      "description": "Layer 0 rule that fired, if any."
+    },
+    "needs_measurement": {
+      "type": ["string", "null"],
+      "description": "Vital that must be measured before the flag can be resolved."
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["HIGH", "MODERATE", "LOW"]
+    },
+    "diagnostic_confidence": {
+      "type": "string",
+      "enum": ["HIGH", "MODERATE", "LOW"]
+    },
+    "reasons": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "missing": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Vitals that were never measured."
+    },
+    "risk": { "type": "number" },
+    "age": { "type": ["number", "null"] },
+    "gender": { "type": ["string", "null"] },
+    "complaint": { "type": "string" },
+    "waited": { "type": "number", "description": "Minutes waited so far." },
+    "overdue_by": { "type": "number", "description": "Minutes past safe reassessment window." },
+    "readings": { "type": "integer" },
+    "signed_off": { "type": "boolean" },
+    "abstained": { "type": "boolean" },
+    "abstain_reason": { "type": "string" },
+    "worsening": { "type": "boolean" },
+    "pathway": { "type": ["string", "null"] },
+    "conflicts": { "type": "array", "items": { "type": "string" } },
+    "vitals": {
+      "type": "object",
+      "description": "Latest recorded vitals.",
+      "properties": {
+        "heartrate": { "type": ["number", "null"] },
+        "sbp": { "type": ["number", "null"] },
+        "o2sat": { "type": ["number", "null"] },
+        "resprate": { "type": ["number", "null"] },
+        "temperature": { "type": ["number", "null"] }
+      }
+    }
+  }
+}

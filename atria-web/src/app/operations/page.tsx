@@ -27,38 +27,37 @@ export default function OperationsPage() {
 
   return (
     <>
-      <p className="text-[12.5px] text-ink2 max-w-3xl leading-relaxed mb-4">
-        Demand against <b>staffed capacity</b> for the next hour. This informs
-        ordering <i>within</i> an ESI band only — it can never move a patient across
-        one. A busy department does not make a sick patient less sick.
+      <h1 className="text-[20px] font-semibold mb-1">How busy the next hour looks</h1>
+      <p className="text-[15px] text-ink2 max-w-3xl leading-relaxed mb-5">
+        This only affects the order of patients who are <b>equally urgent</b>. It
+        can never move someone down a priority. A busy department does not make a
+        sick patient less sick.
       </p>
 
       <div className="grid lg:grid-cols-[300px_1fr] gap-6">
         <section>
-          <h2 className="mono text-[10.5px] tracking-widest uppercase text-ink3 border-b border-rule pb-1.5 mb-3">
-            Staffing
-          </h2>
-          <Slider label="Nurses on" value={nurses} min={1} max={12} onChange={setNurses} />
-          <Slider label="Physical spaces" value={spaces} min={4} max={40} onChange={setSpaces}
-                  hint="Rooms that physically exist. Capacity is the lesser of this and what your nurses can safely cover." />
+          <h2 className="text-[17px] font-semibold mb-3">Staffing</h2>
+          <Slider label="Nurses on shift" value={nurses} min={1} max={12} onChange={setNurses} />
+          <Slider label="Rooms in the department" value={spaces} min={4} max={40} onChange={setSpaces}
+                  hint="How many rooms exist. What you can actually use is the smaller of this and what your nurses can safely cover." />
         </section>
 
         <section>
           {data && (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-rule border border-rule mb-4">
-                <Stat label="Flow" value={data.state} />
-                <Stat label="Open spaces" value={data.open_spaces}
-                      hint="Physically available AND safely staffed. Not licensed beds." />
-                <Stat label="Wait buffer" value={`${Math.round(data.wait_buffer_minutes)}m`} />
-                <Stat label="Arrivals/hr" value={data.arrivals_next_hour} />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <Stat label="Right now" value={data.state === "Steady" ? "Steady" : data.state === "Busy" ? "Busy" : "Very busy"} />
+                <Stat label="Free rooms" value={data.open_spaces}
+                      hint="Rooms that are both empty and have a nurse for them." />
+                <Stat label="Time in hand" value={`${Math.round(data.wait_buffer_minutes)} min`} />
+                <Stat label="Expected arrivals" value={`${data.arrivals_next_hour}/hr`} />
               </div>
 
-              <p className="border-l-2 border-accent bg-surface px-4 py-3 text-[13px] text-ink2 mb-3">
+              <p className="rounded-lg border-2 border-brand bg-brandsoft px-4 py-3.5 text-[16px] mb-3">
                 {data.explanation}
               </p>
               {data.assumptions.map((a) => (
-                <p key={a} className="border-l-2 border-signal bg-surface px-4 py-2 text-[12px] text-signal mb-2">
+                <p key={a} className="rounded-lg border-2 border-warn bg-warnsoft px-4 py-2.5 text-[15px] text-warn mb-2">
                   {a}
                 </p>
               ))}
@@ -66,33 +65,33 @@ export default function OperationsPage() {
               <div className="h-[280px] mt-4">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={data.points}>
-                    <CartesianGrid stroke="#26352f" strokeDasharray="2 4" />
-                    <XAxis dataKey="minute" stroke="#72837f" fontSize={11}
+                    <CartesianGrid stroke="#e3e8e9" strokeDasharray="2 4" />
+                    <XAxis dataKey="minute" stroke="#52605d" fontSize={13}
                            tickFormatter={(m) => `+${m}m`} />
-                    <YAxis stroke="#72837f" fontSize={11} />
-                    <Tooltip contentStyle={{ background: "#15201e", border: "1px solid #26352f",
-                                             fontSize: 12, color: "#e7edea" }} />
-                    <ReferenceLine y={data.staffed_spaces} stroke="#e5766a"
-                                   strokeDasharray="5 5"
-                                   label={{ value: "staffed capacity", fill: "#e5766a", fontSize: 11 }} />
-                    <Line type="monotone" dataKey="in_treatment" name="In a bay"
-                          stroke="#45c4b2" strokeWidth={2} dot={false} />
+                    <YAxis stroke="#52605d" fontSize={13} />
+                    <Tooltip contentStyle={{ background: "#ffffff", border: "2px solid #d9dfe0",
+                                             borderRadius: 8, fontSize: 14, color: "#16211f" }} />
+                    <ReferenceLine y={data.staffed_spaces} stroke="#b3261e"
+                                   strokeDasharray="6 6"
+                                   label={{ value: "rooms we can staff", fill: "#b3261e", fontSize: 13 }} />
+                    <Line type="monotone" dataKey="in_treatment" name="In a room"
+                          stroke="#0f766e" strokeWidth={2} dot={false} />
                     <Line type="monotone" dataKey="waiting" name="Waiting"
-                          stroke="#e8903f" strokeWidth={2} dot={false} />
+                          stroke="#a1580a" strokeWidth={2} dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
 
               <div className="grid md:grid-cols-2 gap-4 mt-3">
-                <p className="text-[11.5px] text-ink3 leading-relaxed">
-                  <b className="text-ink2">Why the teal line flattens.</b> Treatment is
-                  capped at staffed spaces — you cannot treat more people than you have
-                  staffed places for, and a chart that let it climb would be lying.
+                <p className="text-[15px] text-ink2 leading-relaxed">
+                  <b className="text-ink">Why the green line stops rising.</b> You cannot
+                  treat more people than you have staffed rooms for. A chart that let it
+                  keep climbing would be telling you something untrue.
                 </p>
-                <p className="text-[11.5px] text-ink3 leading-relaxed">
-                  <b className="text-ink2">Why the orange line can climb past it.</b> A
-                  queue <i>can</i> grow beyond capacity. Hiding that would hide the single
-                  condition most worth seeing.
+                <p className="text-[15px] text-ink2 leading-relaxed">
+                  <b className="text-ink">Why the orange line can go above it.</b> The
+                  waiting room can keep filling past what you can treat. That is exactly
+                  the thing worth seeing early.
                 </p>
               </div>
             </>
@@ -109,21 +108,21 @@ function Slider({ label, value, min, max, onChange, hint }: {
 }) {
   return (
     <label className="block mb-4">
-      <span className="text-[12.5px] text-ink2">{label}</span>
-      <span className="mono text-[13px] text-accent ml-2">{value}</span>
+      <span className="text-[15px] font-medium">{label}</span>
+      <span className="text-[16px] font-bold text-brand ml-2">{value}</span>
       <input type="range" min={min} max={max} value={value}
              onChange={(e) => onChange(Number(e.target.value))}
-             className="w-full mt-1.5 accent-[#45c4b2]" />
-      {hint && <span className="block text-[11px] text-ink3 mt-1 leading-relaxed">{hint}</span>}
+             className="w-full mt-2 h-6 accent-[#0f766e]" />
+      {hint && <span className="block text-[14px] text-ink2 mt-1 leading-relaxed">{hint}</span>}
     </label>
   );
 }
 
 function Stat({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
   return (
-    <div className="bg-ground px-3 py-2.5" title={hint}>
-      <div className="mono text-[9.5px] tracking-widest uppercase text-ink3">{label}</div>
-      <div className="text-[19px] font-semibold mt-0.5">{value}</div>
+    <div className="bg-card border-2 border-line rounded-lg px-4 py-3" title={hint}>
+      <div className="text-[14px] text-ink2">{label}</div>
+      <div className="text-[24px] font-bold mt-0.5 leading-none">{value}</div>
     </div>
   );
 }

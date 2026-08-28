@@ -1,28 +1,56 @@
 @import "tailwindcss";
 
+/**
+ * Light clinical theme.
+ *
+ * A triage board is read at arm's length, on a tablet, under ward lighting, by
+ * someone who is already holding something else. Everything here is sized and
+ * contrasted for that: base text 16px, touch targets 56px, and colour never
+ * carrying meaning on its own.
+ */
 @theme {
-  --color-ground: #0d1513;
-  --color-surface: #15201e;
-  --color-surface2: #1d2b28;
-  --color-rule: #26352f;
-  --color-ink: #e7edea;
-  --color-ink2: #98a9a5;
-  --color-ink3: #72837f;
-  --color-accent: #45c4b2;
-  --color-signal: #e8903f;
-  --color-critical: #e5766a;
+  --color-page: #f6f7f8;
+  --color-card: #ffffff;
+  --color-sunk: #eef1f2;
+  --color-line: #d9dfe0;
+  --color-line2: #eaeeef;
+
+  --color-ink: #16211f;
+  --color-ink2: #52605d;
+  --color-ink3: #7c8a87;
+
+  --color-brand: #0f766e;
+  --color-brandsoft: #e6f4f1;
+
+  --color-danger: #b3261e;
+  --color-dangersoft: #fdeceb;
+  --color-warn: #a1580a;
+  --color-warnsoft: #fdf1e3;
+  --color-ok: #17683c;
+  --color-oksoft: #e8f5ed;
+
   --font-mono: ui-monospace, Menlo, "SF Mono", monospace;
 }
 
-html, body { background: var(--color-ground); color: var(--color-ink); }
-body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+html, body { background: var(--color-page); color: var(--color-ink); }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
 
 .mono { font-family: var(--font-mono); }
 
-/* Focus is always visible. A triage board is operated under load, sometimes
-   without a mouse, and an invisible focus ring makes that impossible. */
-:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+/* Focus must always be visible: this is operated with a keyboard as often as a
+   finger, and an invisible ring makes that impossible. */
+:focus-visible { outline: 3px solid var(--color-brand); outline-offset: 2px; }
+
+/* Every touch target clears the 44px minimum; primary actions clear 56px. */
+button, [role="button"] { min-height: 44px; }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
 }
