@@ -19,18 +19,19 @@ const TABS = [
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      {/*
-        * suppressHydrationWarning is on <body> only, and only for its own
-        * attributes. Browser extensions — Grammarly, password managers, dark-mode
-        * add-ons — inject attributes here before React hydrates, which React
-        * then reports as a mismatch it cannot patch. That is the extension's
-        * doing, not ours.
-        *
-        * The suppression does not extend to children, so a genuine mismatch
-        * anywhere inside the app still surfaces. Putting it higher, or on a
-        * component that renders real data, would hide the bugs worth seeing.
-        */}
+    /*
+     * suppressHydrationWarning sits on <html> and <body> because browser
+     * extensions mutate both before React hydrates — Grammarly writes
+     * data-gr-ext-installed on <body>, QuillBot writes data-qb-installed on
+     * <html>, password managers and dark-mode add-ons do the same. React then
+     * reports a mismatch it cannot patch, for markup we did not write.
+     *
+     * This is narrower than it looks. The flag suppresses only the element's
+     * OWN attributes and text — it does not extend to descendants — so a
+     * genuine mismatch inside the app still surfaces. That is why it is safe
+     * here and would not be safe on a component rendering patient data.
+     */
+    <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen" suppressHydrationWarning>
         <QueueProvider>
           {/* INT-008: simulation data must never be mistaken for a live read. */}
