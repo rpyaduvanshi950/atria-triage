@@ -165,3 +165,59 @@ def test_children_still_gate_at_their_own_threshold():
 def test_unknown_age_assumes_the_adult_threshold():
     unknown = {k: v for k, v in WELL.items() if k != "age"}
     assert "RF03" in fired_ids({**unknown, "sbp": 85})
+
+
+def test_the_refusal_message_does_not_read_as_a_fraction():
+    """
+    "2 of 3 required vitals recorded" was read as two thirds. Three is the
+    minimum, not the denominator — there are six fields. A nurse acting on a
+    misread count is the whole cost of a badly worded string.
+    """
+    from layer0.engine import TRIAGEABLE_FIELDS, gate
+
+    g = gate({"o2sat": 97, "temperature": 37.0, "age": 40},
+             {"o2sat", "sbp", "heartrate", "resprate", "temperature"})
+    msg = g.explain()
+    assert g.hard_stop
+    assert "2 of 3" not in msg
+    assert f"of the {len(TRIAGEABLE_FIELDS)}" in msg
+    assert "at least 3 are needed" in msg
+
+
+def test_the_refusal_separates_unmeasured_from_uncollected():
+    """
+    A vital nobody has taken yet is a task for the nurse. A vital the data
+    source does not carry is not — and asking someone to record a field the
+    system can never receive wastes the one instruction it gets to give.
+    """
+    from layer0.engine import gate
+
+    g = gate({"o2sat": 97, "temperature": 37.0, "age": 40},
+             {"o2sat", "sbp", "heartrate", "resprate", "temperature"})
+    msg = g.explain()
+    assert "Please record: sbp, heartrate, resprate" in msg
+    assert "Not available from this source: gcs" in msg
+    # gcs must not appear as something to go and measure
+    assert "Please record" in msg and "gcs" not in msg.split("Not available")[0]
+
+
+def test_no_source_claim_treats_every_field_as_measurable():
+    """`available` is None when the caller makes no claim. It must not crash."""
+    from layer0.engine import gate
+
+    g = gate({"o2sat": 97, "temperature": 37.0, "age": 40})
+    assert g.hard_stop
+    assert "Not available from this source" not in g.explain()
+    assert "gcs" in g.explain()
+
+
+def test_refusing_to_score_is_an_escalation_not_a_shrug():
+    """
+    The answer to "why not just assume the worst case?" — it already is an
+    escalation. An unknown patient goes ahead of everyone already cleared,
+    rather than being scored on assumptions and buried in the middle.
+    """
+    from layer0.engine import gate
+
+    g = gate({"o2sat": 97, "temperature": 37.0, "age": 40})
+    assert g.hard_stop and g.priority == 2

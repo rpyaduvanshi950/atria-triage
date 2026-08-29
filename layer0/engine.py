@@ -267,10 +267,29 @@ class RuleTable:
         hard_stop = seen < MIN_FIELDS_TO_TRIAGE and not fired
         reason = ""
         if hard_stop:
-            missing = [f for f in TRIAGEABLE_FIELDS if patient.get(f) is None]
-            reason = (f"RF11 insufficient data to triage — {seen} of "
-                      f"{MIN_FIELDS_TO_TRIAGE} required vitals recorded; "
-                      f"missing {', '.join(missing[:4])}. Clinician assessment required")
+            # Two different kinds of absent, and a nurse can only act on one of
+            # them. A vital nobody has measured yet is a task. A vital this data
+            # source does not carry at all is not — telling someone to "go and
+            # record" a field the system can never receive wastes the one
+            # instruction we get to give them.
+            # `available` is None when the caller makes no claim about the
+            # source, in which case every field counts as measurable.
+            supplies = set(TRIAGEABLE_FIELDS) if available is None else available
+            unmeasured = [f for f in TRIAGEABLE_FIELDS
+                          if patient.get(f) is None and f in supplies]
+            uncollected = [f for f in TRIAGEABLE_FIELDS if f not in supplies]
+
+            # "2 of 3" read as a fraction: three is the minimum, not the total.
+            reason = (f"RF11 insufficient data to triage — only {seen} vital"
+                      f"{'' if seen == 1 else 's'} recorded of the "
+                      f"{len(TRIAGEABLE_FIELDS)} ATRIA uses, and at least "
+                      f"{MIN_FIELDS_TO_TRIAGE} are needed.")
+            if unmeasured:
+                reason += f" Please record: {', '.join(unmeasured)}."
+            if uncollected:
+                reason += (f" Not available from this source: "
+                           f"{', '.join(uncollected)}.")
+            reason += " Clinician assessment required"
 
         # RF12 — ambiguity across the three gates, supplied by the caller because
         # it needs the pathway model. Layer 0 stays free of it by taking a number.
