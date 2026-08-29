@@ -214,10 +214,10 @@ is why this survived. Both are now covered.
 |---|---|
 | Layer 1 | **AUC 0.809** on 560,486 real Yale encounters. The published benchmark is 0.87 — using the nurse's ESI and race, which we exclude |
 | Operating point | 95.0% sensitivity, 34.1% specificity, 5.0% undertriage — tuned to the ACS ≤5% standard |
-| Layer 2 on real patients | Flags **32.2%** of those later admitted against **12.2%** discharged home, median **164 minutes** of lead time |
-| Fairness | "Other" undertriaged at 9.2% against 4.0% for White; calibration closes the gap to 5.0% |
+| Layer 2 on real patients | Flags **32.2%** of those later admitted against **12.2%** discharged home — a **+20.0 point** difference, 95% CI [+4.6, +31.2]. Median **164 minutes** of lead time, CI [111, 258] |
+| Fairness | Worst-served group undertriaged at 9.2% against 4.0%; subgroup-conditional calibration takes the gap to **2.1%** out of sample, 95% CI [0.4, 4.3] — inside the 5-point tolerance |
 | Soak test | 25 shifts, 434 patients treated, 565 full nurse workflows, **0 problems** |
-| Test suite | **221 passing** |
+| Test suite | **234 passing** |
 
 ---
 
@@ -244,10 +244,18 @@ experiment clean.
 ## Limitations, stated plainly
 
 - The outcome label is hospital **admission**, a coarser proxy for acuity than
-  ICU-transfer-or-death. No open ED dataset carries ICU timestamps.
-- Layer 2 is validated on **159 real trajectories** — a small sample.
-- The fairness gap is **narrowed, not closed**. 5.0% is still above the 5-point
-  tolerance we set ourselves.
+  ICU-transfer-or-death. No open ED dataset carries ICU timestamps, which is
+  checked rather than assumed: neither Yale nor the MIMIC demo has one. The
+  sharpest available substitute — a time-critical diagnosis on the encounter —
+  is measured and reported, and at 19 patients it cannot resolve the question.
+  This is the strongest argument for credentialed access.
+- Layer 2 is validated on **159 real trajectories**. Small, and reported that
+  way: every rate carries an interval. The primary endpoint clears zero; the
+  sharper critical-diagnosis endpoint does not, on 19 patients. That negative
+  result is published rather than dropped.
+- The fairness gap is **inside tolerance but not zero**: 2.1%, measured out of
+  sample, CI [0.4, 4.3]. Four subgroups are too small to estimate their own rate
+  to better than the tolerance; they are named rather than dropped.
 - The three pathways are the classical triad, assumed. Round 1 names only
   "Cerebral Hypoxia".
 - **Every threshold here is a prototype default.** None has been approved by a

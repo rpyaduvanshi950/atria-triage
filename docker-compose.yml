@@ -1,124 +1,86 @@
-# ATRIA — local development stack.
+# ATRIA — the whole thing, in one command.
 #
-# A developer should be able to reach a working nurse-first assessment screen
-# within one `docker compose up`, using only synthetic data and no production
-# credentials — this is the literal "definition of done" bar from PRD §21.1.
-#
-# Usage:
-#   docker compose up -d db redis
-#   docker compose up api guardrail-service inference-service web
-#
-# Or simply:
 #   docker compose up
+#
+#   nurse board (Next.js)   http://localhost:3000
+#   engine + API docs       http://localhost:8000/docs
+#   Streamlit board         http://localhost:8501
+#
+# Sign in with nurse.demo / nurse.demo, or admin.demo for everything.
+#
+# What is deliberately NOT here: Postgres, Redis, and a pair of separately
+# deployed guardrail and inference services. An earlier version of this file
+# declared all four. None of them was read by a single line of code — the
+# services printed a message and slept, and the database was never connected
+# to. A compose file that stands up infrastructure the application ignores is
+# worse than no compose file: it tells a reviewer the architecture is something
+# it is not.
+#
+# The audit trail is SQLite on a named volume, which is what layer3/store.py
+# actually writes to. When it outgrows that, the change is in that one module
+# and a `db:` service belongs here again.
 
 services:
-  # --- data stores -----------------------------------------------------------
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: atria
-      POSTGRES_USER: atria
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atria_dev}
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U atria"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  # --- backend services (all from the same image for the prototype) ----------
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     command: >
-      uvicorn service.app:app
-      --host 0.0.0.0 --port 8000 --reload
+      uvicorn service.app:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://atria:${POSTGRES_PASSWORD:-atria_dev}@db:5432/atria
-      REDIS_URL: redis://redis:6379/0
+      # The audit trail lives on a volume so it survives `docker compose down`.
+      # That is the entire point of it: a hash chain that dies with the
+      # container proves nothing.
+      ATRIA_DB: /data/atria_audit.db
+      # The browser reaches the API on localhost, not on the compose network,
+      # so the allow-list is host-side origins.
       ATRIA_ALLOWED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8501"
-      JWT_SECRET: ${JWT_SECRET:-atria_dev_secret_not_for_production}
+      # Override in a .env file. Unset means a per-process random secret, which
+      # is safe but signs everyone out whenever the container restarts.
+      ATRIA_SECRET: ${ATRIA_SECRET:-}
+      # Set ATRIA_SHADOW=1 to bring the stack up in shadow mode: every layer
+      # runs and nothing moves the board.
+      ATRIA_SHADOW: ${ATRIA_SHADOW:-}
+      # Point at a FHIR R4 server to pull vitals. Unconfigured is fine — the
+      # integration reports itself as not connected.
+      ATRIA_FHIR_BASE: ${ATRIA_FHIR_BASE:-}
     volumes:
-      - .:/app
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - audit:/data
+    healthcheck:
+      # /v1/auth/token exists whether or not anyone is signed in, so this
+      # checks the app is serving rather than that a route is public.
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/docs')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
 
-  # The guardrail service is the same code but conceptually separate.
-  # In production it would be its own deployment with zero DB dependency.
-  guardrail-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: >
-      python -c "
-      from layer0.engine import gate, RuleTable;
-      print(f'Guardrail service ready: {len(RuleTable().rules)} rules, v{RuleTable().version}');
-      import time; time.sleep(999999)
-      "
-    volumes:
-      - .:/app
-
-  # The inference service wraps the ML model.
-  inference-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: >
-      python -c "
-      from data.loaders.synthetic import generate;
-      from layer1.model import AcuityScorer;
-      s = AcuityScorer().fit(generate(1500, seed=3));
-      print(f'Inference service ready: {s.metrics}');
-      import time; time.sleep(999999)
-      "
-    volumes:
-      - .:/app
-
-  # --- frontend --------------------------------------------------------------
   web:
     build:
       context: ./atria-web
-      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_ATRIA_API: http://localhost:8000
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://api:8000
+      # Baked in at build time by Next, and read by the browser — so it must be
+      # an address the browser can reach, never the compose service name.
+      NEXT_PUBLIC_ATRIA_API: http://localhost:8000
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
-  # Streamlit alternative frontend
   streamlit:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     command: >
       streamlit run streamlit_app.py
-      --server.address 0.0.0.0
-      --server.port 8501
-      --server.headless true
+      --server.address 0.0.0.0 --server.port 8501 --server.headless true
     ports:
       - "8501:8501"
+    environment:
+      ATRIA_DB: /data/atria_audit.db
     volumes:
-      - .:/app
+      - audit:/data
 
 volumes:
-  pgdata:
+  audit:

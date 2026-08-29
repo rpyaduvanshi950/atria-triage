@@ -125,8 +125,15 @@ def fig_fairness(mitigation) -> None:
     ax.set_xticks(x, d["group"])
     ax.set(ylabel="sensitivity", ylim=(0, 1.16))
     ax.yaxis.set_major_formatter(lambda v, _: f"{v:.0%}")
-    ax.set_title(f"Sensitivity by age band — gap {mitigation['tpr_gap_before']:.0%}"
+    # The gap is None when no subgroup has enough positives to estimate its own
+    # rate to within the tolerance. Say that on the chart rather than printing a
+    # number the data does not support.
+    if mitigation["tpr_gap_after"] is None:
+        title = "Sensitivity by age band — gap not resolvable at this sample size"
+    else:
+        title = (f"Sensitivity by age band — gap {mitigation['tpr_gap_before']:.0%}"
                  f" → {mitigation['tpr_gap_after']:.0%}")
+    ax.set_title(title)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.13), ncols=2)
     ax.grid(axis="y", lw=0.6)
     ax.set_axisbelow(True)

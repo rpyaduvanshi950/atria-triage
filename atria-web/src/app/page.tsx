@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueue } from "@/lib/queue-context";
 import { useFlip } from "@/lib/useFlip";
-import { QueueRowCard } from "@/components/QueueRow";
+import { QueueList } from "@/components/QueueList";
+import { Announcer } from "@/components/Announcer";
 import { BlindAssessment } from "@/components/BlindAssessment";
 import { PatientRecord } from "@/components/PatientRecord";
 import { LANE_NAME } from "@/types/copy";
@@ -28,16 +29,38 @@ export default function AssessmentPage() {
   const selected = pinned ?? (ticket ? null : waiting[0] ?? null);
   const pinnedLeftQueue = pinned !== null && pinned.state === "IN TREATMENT";
 
-  const flipRef = useFlip(rows.map((r) => r.ticket));
+  const scroller = useRef<HTMLDivElement>(null);
+  const flipRef = useFlip(rows.map((r) => r.ticket), scroller);
 
-  // Keyboard-first: a nurse under load should not need a mouse.
+  /*
+   * Keyboard-first: a nurse under load should not need a mouse.
+   *
+   *   j / k     next / previous patient
+   *   1 - 5     record your ESI for the selected patient
+   *   Enter     confirm the step the assessment panel is on
+   *
+   * The digits are dispatched as an event rather than lifted into state, so the
+   * assessment panel stays the only thing that knows how to record an ESI. Two
+   * code paths posting the nurse's answer is exactly how the blind cycle would
+   * come apart.
+   */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLElement &&
           ["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
       const i = waiting.findIndex((r) => r.ticket === selected?.ticket);
-      if (e.key === "j" && i < waiting.length - 1) setTicket(waiting[i + 1].ticket);
-      if (e.key === "k" && i > 0) setTicket(waiting[i - 1].ticket);
+      if (e.key === "j" && i < waiting.length - 1) return setTicket(waiting[i + 1].ticket);
+      if (e.key === "k" && i > 0) return setTicket(waiting[i - 1].ticket);
+
+      if (/^[1-5]$/.test(e.key)) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("atria:esi", { detail: Number(e.key) }));
+      }
+      if (e.key === "Enter") {
+        window.dispatchEvent(new CustomEvent("atria:confirm"));
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -53,6 +76,7 @@ export default function AssessmentPage() {
 
   return (
     <>
+      <Announcer />
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
         <Stat label="Waiting" value={snapshot.waiting} hint="Patients in the queue now." />
         <Stat label="In treatment" value={`${snapshot.in_treatment} of ${snapshot.slots}`}
@@ -88,12 +112,12 @@ export default function AssessmentPage() {
           <h2 className="text-[17px] font-semibold mb-1">Attention order</h2>
           <p className="text-[14px] text-ink2 mb-3 leading-relaxed">
             The order changes as people wait and as their readings change. Tap a
-            patient to assess them. Keys <b>j</b> and <b>k</b> move down and up.
+            patient to assess them. <b>j</b> and <b>k</b> move down and up,
+            <b> 1</b>–<b>5</b> record your priority, <b>Enter</b> confirms.
           </p>
-          {rows.slice(0, 14).map((r) => (
-            <QueueRowCard key={r.ticket} row={r} selected={r.ticket === selected?.ticket}
-                          onSelect={(x) => setTicket(x.ticket)} innerRef={flipRef(r.ticket)} />
-          ))}
+          <QueueList rows={rows} selectedTicket={selected?.ticket ?? null}
+                     onSelect={(x) => setTicket(x.ticket)}
+                     flipRef={flipRef} scroller={scroller} />
         </section>
 
         <section aria-label="Nurse assessment">

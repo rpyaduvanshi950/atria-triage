@@ -48,12 +48,47 @@ export function BlindAssessment({ row, onChanged }: {
   const noteRequired = reason === "other";
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /* The ESI the nurse just pressed, shown immediately while the request is in
+     flight. Optimistic about the *acknowledgement*, never about the outcome:
+     the comparison and the sign-off state come from the server, because those
+     are the parts a client guessing wrong would corrupt. */
+  const [pending, setPending] = useState<number | null>(null);
 
-  useEffect(() => { setView(null); setToken(""); setProblem(null); setNote(""); },
-            [row.stay_id]);
+  useEffect(() => {
+    setView(null); setToken(""); setProblem(null); setNote(""); setPending(null);
+  }, [row.stay_id]);
 
   const stage = view?.stage ?? "awaiting_nurse";
   const stepIndex = stage === "awaiting_nurse" ? 0 : stage === "compared" ? 1 : 2;
+
+  /*
+   * The keyboard shortcuts the board dispatches. They land here because this is
+   * the component that owns the workflow — the page knows which keys were
+   * pressed and nothing else, so there is still exactly one path that records
+   * an ESI.
+   *
+   * A digit is ignored once the recommendation is on screen. Re-entering an
+   * answer after seeing ATRIA is precisely the anchoring the blind cycle exists
+   * to prevent, and the server would refuse it anyway.
+   */
+  useEffect(() => {
+    const onEsi = (e: Event) => {
+      const esi = (e as CustomEvent<number>).detail;
+      if (busy || view?.revealed || stage !== "awaiting_nurse") return;
+      choose(esi);
+    };
+    const onConfirm = () => {
+      if (busy || stage !== "compared") return;
+      if (view?.needs_reason && reason === "other" && !note.trim()) return;
+      finalize();
+    };
+    window.addEventListener("atria:esi", onEsi);
+    window.addEventListener("atria:confirm", onConfirm);
+    return () => {
+      window.removeEventListener("atria:esi", onEsi);
+      window.removeEventListener("atria:confirm", onConfirm);
+    };
+  });
 
   const run = async (fn: () => Promise<AssessmentView>) => {
     if (busy) return;
@@ -63,13 +98,27 @@ export function BlindAssessment({ row, onChanged }: {
     finally { setBusy(false); }
   };
 
-  const choose = (esi: number) =>
-    run(async () => {
-      const stored = await api.nurseAssess(row.stay_id, esi);
-      const t = (stored as AssessmentView & { reveal_token?: string }).reveal_token ?? "";
-      setToken(t);
-      return api.reveal(row.stay_id, t);
+  /* One implementation, two ways in — the button and Enter. A second copy of
+     this call is a second place for the reason-code rules to drift. */
+  const finalize = () =>
+    run(() => api.finalize(
+      row.stay_id,
+      view?.needs_reason ? reason : "",
+      view?.needs_reason && reason === "other" ? note : ""));
+
+  const choose = (esi: number) => {
+    setPending(esi);
+    return run(async () => {
+      try {
+        const stored = await api.nurseAssess(row.stay_id, esi);
+        const t = (stored as AssessmentView & { reveal_token?: string }).reveal_token ?? "";
+        setToken(t);
+        return await api.reveal(row.stay_id, t);
+      } finally {
+        setPending(null);
+      }
     });
+  };
 
   return (
     <div>
@@ -102,10 +151,18 @@ export function BlindAssessment({ row, onChanged }: {
           <div className="grid gap-2">
             {[1, 2, 3, 4, 5].map((esi) => (
               <button key={esi} disabled={busy} onClick={() => choose(esi)}
-                      className="min-h-[64px] text-left px-4 py-3 rounded-xl border border-line
-                                 bg-card shadow-[0_1px_2px_rgba(33,52,58,.06)]
-                                 hover:border-brand hover:bg-brandsoft
-                                 disabled:opacity-50 transition-colors">
+                      aria-keyshortcuts={String(esi)}
+                      className={clsx(
+                        "min-h-[64px] text-left px-4 py-3 rounded-xl border",
+                        "bg-card shadow-[0_1px_2px_rgba(33,52,58,.06)]",
+                        "hover:border-brand hover:bg-brandsoft",
+                        "disabled:opacity-50 transition-colors",
+                        // The press is acknowledged the instant it happens. The
+                        // answer it produces still comes from the server.
+                        pending === esi
+                          ? "border-brand bg-brandsoft ring-2 ring-brand"
+                          : "border-line",
+                      )}>
                 <div className="flex items-baseline gap-3">
                   <span className="text-[22px] font-bold w-6">{esi}</span>
                   <span className="text-[16px] font-semibold">{ESI_SHORT[esi]}</span>
@@ -174,10 +231,7 @@ export function BlindAssessment({ row, onChanged }: {
               <button disabled={busy || (view.needs_reason && noteRequired && !note.trim())}
                       title={view.needs_reason && noteRequired && !note.trim()
                         ? "Write what you saw before signing off" : undefined}
-                      onClick={() => run(() => api.finalize(
-                        row.stay_id,
-                        view.needs_reason ? reason : "",
-                        view.needs_reason && noteRequired ? note : ""))}
+                      onClick={finalize}
                       className="w-full mt-4 min-h-[60px] rounded-xl bg-brand text-white
                                  text-[17px] font-semibold hover:opacity-90
                                  disabled:opacity-50 transition-opacity">

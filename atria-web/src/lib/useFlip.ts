@@ -12,9 +12,21 @@
  * Honours prefers-reduced-motion: the movement is replaced by a brief highlight,
  * because the information must survive even when the animation does not.
  */
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, type RefObject } from "react";
 
-export function useFlip(keys: (string | number)[]) {
+/**
+ * @param keys      the current order; a change triggers the measure pass
+ * @param scroller  the scroll container, when the list is virtualised.
+ *
+ * Positions are measured relative to the scroll container's content, not the
+ * viewport. Inside a scrolling list `getBoundingClientRect().top` changes on
+ * every scroll event, so a viewport-relative measurement would read an ordinary
+ * scroll as though every patient had just been re-ranked and animate the whole
+ * list. Adding scrollTop back cancels the scroll out, leaving only real
+ * movement within the queue.
+ */
+export function useFlip(keys: (string | number)[],
+                        scroller?: RefObject<HTMLElement | null>) {
   const nodes = useRef(new Map<string | number, HTMLElement>());
   const previous = useRef(new Map<string | number, number>());
 
@@ -26,8 +38,10 @@ export function useFlip(keys: (string | number)[]) {
   useLayoutEffect(() => {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+    const scrollTop = scroller?.current?.scrollTop ?? 0;
+
     nodes.current.forEach((el, key) => {
-      const now = el.getBoundingClientRect().top;
+      const now = el.getBoundingClientRect().top + scrollTop;
       const before = previous.current.get(key);
       previous.current.set(key, now);
       if (before === undefined || Math.abs(before - now) < 1) return;

@@ -59,9 +59,9 @@ names. Now age-banded on PALS.
 | Published benchmark | 0.87 — *using the nurse's ESI and race, which we exclude* |
 | Price of independence | 0.859 with the nurse's ESI, 0.809 without |
 | Operating point | 95.0% sensitivity · 34.1% specificity · 5.0% undertriage |
-| Layer 2 on real patients | **32.2%** of later-admitted flagged vs **12.2%** discharged, median **164 min** lead |
+| Layer 2 on real patients | **32.2%** of later-admitted flagged vs **12.2%** discharged — a **+20.0 point** difference, 95% CI [+4.6, +31.2]. Median **164 min** lead |
 | Cross-site | Train on two hospitals, test on the third: within **±0.026** AUC |
-| Fairness | "Other" undertriaged 9.2% vs 4.0% White → gap closed to **5.0%** |
+| Fairness | Worst-served group undertriaged 9.2% vs 4.0% → gap **5.3% → 2.1%** out of sample, inside the 5-point tolerance |
 | Latency | **p95 52 ms** under 3× surge, against a 400 ms budget |
 | Scale | ~7,650 lines of Python · 18 endpoints · **199 tests** |
 
@@ -253,8 +253,8 @@ is typed by hand, so the slides cannot drift.
 | The price of independence | 0.859 with the nurse's ESI, 0.809 without |
 | Operating point | 95.0% sensitivity, 34.1% specificity, 5.0% undertriage — tuned to the ACS ≤5% standard, not to accuracy |
 | Cross-site | Train on two hospitals, test on the third: unseen-site AUC within ±0.026 |
-| Racial disparity | "Other" undertriaged at 9.2% against 4.0% for White. Removing race from the model cut the gap 8.3 → 5.2 points on its own; calibration took it to 5.0% |
-| Layer 2 on real trajectories | 32.2% of later-admitted flagged vs 12.2% of discharged, median **164 min** lead (159 MIMIC stays) |
+| Racial disparity | "Other" undertriaged at 9.2% against 4.0% for White. Removing race from the model cut the gap 8.3 → 5.2 points on its own; subgroup-conditional calibration takes the sensitivity gap to **2.1%** (95% CI [0.4, 4.3]), fitted on half the data and measured on the other half |
+| Layer 2 on real trajectories | 32.2% of later-admitted flagged vs 12.2% of discharged — **+20.0 points, 95% CI [+4.6, +31.2]**, so the difference is real at this sample size. Median **164 min** lead, CI [111, 258] (159 MIMIC stays) |
 | Conformal coverage | ≥95% **per class**, calibrated on held-out data |
 | Latency | p95 **52 ms** under 3× surge, against a 400 ms budget |
 
@@ -328,7 +328,7 @@ Makefile       every command
 | `make web` | the Next.js client on :3000 (run `make demo` alongside) |
 | `make demo` | the FastAPI build on :8000 |
 | `make scenarios` | seven deterministic demo cases |
-| `make test` | 221 tests |
+| `make test` | 234 tests |
 | `make freeze` | train once and pin the model artifact and manifest |
 | `make shadow` | run in shadow mode: every layer runs, nothing acts |
 | `make report` | regenerate `docs/results.md` and all figures |
@@ -401,10 +401,19 @@ Read these before quoting any number.
   ICU-transfer-or-death. No open ED dataset carries ICU timestamps.
 - Yale is **adults-only** with no pain score, so `is_paediatric` and `pain` are
   dropped at fit time. Paediatric cases come from the synthetic generator.
-- Layer 2 is validated on **159 real trajectories** — a small sample.
-- The fairness gap is **narrowed, not closed**: 5.0% after mitigation is still
-  above our own 5-point tolerance. The age finding reversed between synthetic
-  and real data, so fairness results do not transfer between datasets.
+- Layer 2 is validated on **159 real trajectories**. Small, and now reported
+  that way: every rate carries a confidence interval, and the primary endpoint
+  clears zero (+20.0 points, CI [+4.6, +31.2]) while the sharper
+  critical-diagnosis endpoint does **not** (+5.1 points, CI [-12.9, +28.5], on
+  19 patients). The second result is a negative one and is published as such.
+- The fairness gap is **inside tolerance but not zero**: 2.1% after mitigation,
+  measured out of sample, 95% CI [0.4, 4.3] — a real difference, just a small
+  one. Four subgroups are too small for their own rate to be estimated to
+  better than the tolerance itself; they are excluded from the gap and named in
+  the report rather than dropped. The old figure of 5.0% was fitted and scored
+  on the same patients, which flattered the smallest groups most. The age
+  finding reversed between synthetic and real data, so fairness results do not
+  transfer between datasets.
 - The three atria mortis pathways are the **classical triad**, assumed. Round 1
   names only "Cerebral Hypoxia"; if it defined the other two differently, change
   `PATHWAYS` and nothing else moves.

@@ -107,13 +107,44 @@ def main() -> None:
     w("\n## Layer 2 — trajectory signal on real patients\n")
     w(f"MIMIC-IV-ED demo, {lt['stays_examined']} stays with >=3 repeated readings, "
       "replayed reading by reading.\n")
-    w("| metric | value |")
-    w("|---|---|")
-    w(f"| flagged among admitted or transferred | {lt['sensitivity_admitted']:.1%} "
-      f"(n={lt['n_admitted']}) |")
-    w(f"| flagged among discharged home | {lt['false_positive_discharged']:.1%} "
-      f"(n={lt['n_discharged']}) |")
-    w(f"| median lead time | {lt['median_lead_minutes']:.0f} min before last reading |")
+    w("| metric | value | 95% CI |")
+    w("|---|---|---|")
+    sa, fp = lt["sensitivity_admitted_ci"], lt["false_positive_discharged_ci"]
+    ml, da = lt["median_lead_ci"], lt["discrimination_admitted"]
+    w(f"| flagged among admitted or transferred | {sa['rate']:.1%} (n={sa['n']}) "
+      f"| {sa['ci_low']:.1%} to {sa['ci_high']:.1%} |")
+    w(f"| flagged among discharged home | {fp['rate']:.1%} (n={fp['n']}) "
+      f"| {fp['ci_low']:.1%} to {fp['ci_high']:.1%} |")
+    w(f"| **difference** | **{da['gap']:+.1%}** "
+      f"| {da['ci_low']:+.1%} to {da['ci_high']:+.1%} |")
+    w(f"| median lead time | {ml['estimate']:.0f} min before last reading "
+      f"| {ml['ci_low']:.0f} to {ml['ci_high']:.0f} min |")
+    w(f"\nThe difference {'excludes' if da['distinguishable'] else 'includes'} zero, so "
+      f"Layer 2 {'does' if da['distinguishable'] else 'does not'} discriminate between "
+      "the two groups at this sample size.\n")
+
+    w("\n### A sharper endpoint, and what it cannot yet show\n")
+    sc, fc = lt["sensitivity_critical_ci"], lt["false_positive_noncritical_ci"]
+    dc = lt["discrimination_critical"]
+    w("Admission is a coarse acuity proxy. The sharper endpoint available in this "
+      "data is a time-critical diagnosis recorded on the encounter — sepsis, "
+      "infarction, arrest, intracranial haemorrhage, respiratory failure, PE, "
+      "status epilepticus, DKA, shock.\n")
+    w("| metric | value | 95% CI |")
+    w("|---|---|---|")
+    w(f"| flagged among critical | {sc['rate']:.1%} (n={sc['n']}) "
+      f"| {sc['ci_low']:.1%} to {sc['ci_high']:.1%} |")
+    w(f"| flagged among non-critical | {fc['rate']:.1%} (n={fc['n']}) "
+      f"| {fc['ci_low']:.1%} to {fc['ci_high']:.1%} |")
+    w(f"| **difference** | **{dc['gap']:+.1%}** "
+      f"| {dc['ci_low']:+.1%} to {dc['ci_high']:+.1%} |")
+    w(f"\n**This endpoint is not resolvable here.** {sc['n']} critical patients is far "
+      "too few, and the interval spans zero comfortably. Reported anyway, because a "
+      "negative result on the sharper endpoint is the honest statement of what this "
+      "dataset can and cannot support — and it is the strongest argument for the "
+      "credentialed access that would carry ICU timestamps.\n"
+      if not dc["distinguishable"] else
+      f"\nThe difference excludes zero on n={sc['n']}.\n")
     w("\nQueue aging is suppressed for this measurement: real ED stays run for hours, "
       "so the aging term fires on nearly everyone and would drown the physiological "
       "signal being measured.\n")
@@ -125,9 +156,22 @@ def main() -> None:
     w(eo.to_markdown(index=False))
     w(f"\n### Mitigation — subgroup-conditional conformal ({mit['attribute']})\n")
     w(mit["detail"].to_markdown(index=False))
-    w(f"\n**TPR gap {mit['tpr_gap_before']:.1%} -> {mit['tpr_gap_after']:.1%}.** "
-      "Each group gets its own coverage guarantee rather than a shared average "
-      "that hides the worst-served group inside it.\n")
+    g = mit["gap_ci"]
+    w(f"\n**TPR gap {mit['tpr_gap_before']:.1%} -> {mit['tpr_gap_after']:.1%}"
+      f"** (residual {g['gap']:.1%}, 95% CI [{g['ci_low']:.1%}, {g['ci_high']:.1%}], "
+      f"{mit['best_served']} vs {mit['worst_served']}). Each group gets its own "
+      "coverage guarantee rather than a shared average that hides the "
+      "worst-served group inside it.\n")
+    w(f"\nWithin the {fairness.EO_TOLERANCE:.0%} tolerance: "
+      f"**{'yes' if abs(g['gap']) <= fairness.EO_TOLERANCE else 'no'}**. "
+      f"Thresholds are fitted on {mit['n_calibrate']:,} patients and measured on a "
+      f"held-out {mit['n_test']:,} — the previous version of this table fitted and "
+      "scored on the same patients, so every figure in it was the quantile it had "
+      "just been fitted to.\n")
+    if mit["groups_too_small_to_resolve"]:
+        w("\nExcluded from the gap because their own confidence interval is wider "
+          "than the tolerance itself, and reported here rather than dropped: "
+          + ", ".join(f"`{g}`" for g in mit["groups_too_small_to_resolve"]) + ".\n")
 
     w("\n## Latency\n")
     w("| path | n | p50 | p95 | p99 | max |")
