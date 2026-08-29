@@ -111,9 +111,14 @@ export default function AssessmentPage() {
         <section aria-label="Attention queue">
           <h2 className="text-[17px] font-semibold mb-1">Attention order</h2>
           <p className="text-[14px] text-ink2 mb-3 leading-relaxed">
-            The order changes as people wait and as their readings change. Tap a
-            patient to assess them. <b>j</b> and <b>k</b> move down and up,
-            <b> 1</b>–<b>5</b> record your priority, <b>Enter</b> confirms.
+            Tap a patient to assess them. <b>j</b> and <b>k</b> move down and
+            up, <b>1</b>–<b>5</b> record your priority, <b>Enter</b> confirms.
+            <br />
+            <span className="text-ink3">
+              The order settles every 20 seconds so it does not move while you
+              are reading it — but anyone who gets <b>worse</b> moves up
+              straight away.
+            </span>
           </p>
           <QueueList rows={rows} selectedTicket={selected?.ticket ?? null}
                      onSelect={(x) => setTicket(x.ticket)}
