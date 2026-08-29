@@ -23,6 +23,9 @@ export function QueueRowCard({
   const urgent = row.band <= 2;
   const why = row.red_flag || row.reasons[0] || row.needs_measurement || "";
 
+  // Signed off by the nurse, but nobody has taken them through yet.
+  const awaitingBay = row.signed_off && !treating;
+
   return (
     <button
       ref={innerRef as never}
@@ -33,16 +36,31 @@ export function QueueRowCard({
         `${row.complaint}, waiting ${row.waited} minutes`
       }
       className={clsx(
-        "w-full text-left flex gap-4 items-start p-4 mb-2 rounded-xl bg-card border",
+        "w-full text-left flex gap-4 items-start p-4 mb-2 rounded-xl bg-card",
         "shadow-[0_1px_2px_rgba(33,52,58,.06)] transition-shadow hover:shadow-md",
-        treating && "opacity-55",
-        row.red_flag || row.abstained
-          ? "border-danger"
-          : row.state === "ESCALATED"
-            ? "border-warn"
-            : selected
-              ? "border-brand"
-              : "border-line",
+        /*
+         * Border colour answers one question: is anyone doing anything for this
+         * patient right now?
+         *
+         *   green   in a bay — being treated
+         *   red     signed off and still waiting for a bay. Triage is finished
+         *           and nothing further is happening, which is the group that
+         *           gets forgotten, so it is the loudest thing on the card.
+         *
+         * Only when neither applies does the border go back to describing the
+         * triage itself — a red flag, an escalation, or the current selection.
+         */
+        treating
+          ? "border-2 border-ok bg-oksoft/40"
+          : awaitingBay
+            ? "border-2 border-danger"
+            : row.red_flag || row.abstained
+              ? "border border-danger"
+              : row.state === "ESCALATED"
+                ? "border border-warn"
+                : selected
+                  ? "border border-brand"
+                  : "border border-line",
       )}
     >
       <div className={clsx(

@@ -16,8 +16,20 @@ export default function AssessmentPage() {
   const [ticket, setTicket] = useState<string | null>(null);
 
   const rows = snapshot?.rows ?? [];
-  const waiting = rows.filter((r) => r.state !== "IN TREATMENT");
-  const inTreatment = rows.filter((r) => r.state === "IN TREATMENT");
+  /*
+   * The board splits on "is triage finished for this person", not on "are they
+   * in a bay".
+   *
+   * A patient the nurse has signed off is done with the attention queue — there
+   * is nothing left for a triage nurse to do — but they are not being treated
+   * either. Leaving them in a list headed "Attention order" hides the group
+   * that most needs watching: triaged, cleared, and still sitting there.
+   */
+  const waiting = rows.filter(
+    (r) => r.state !== "IN TREATMENT" && !r.signed_off);
+  const inTreatment = rows.filter(
+    (r) => r.state === "IN TREATMENT" || r.signed_off);
+  const awaitingBay = inTreatment.filter((r) => r.state !== "IN TREATMENT");
   /*
    * The selection is pinned once a nurse picks someone.
    *
@@ -28,7 +40,13 @@ export default function AssessmentPage() {
    * stays on screen instead of being silently swapped for someone else.
    */
   const pinned = ticket ? rows.find((r) => r.ticket === ticket) ?? null : null;
-  const selected = pinned ?? (ticket ? null : waiting[0] ?? null);
+  /*
+   * Only a move into a bay drags the tab across, not a sign-off. Being taken
+   * through happens TO the patient while the nurse is looking elsewhere, so the
+   * view should follow. A sign-off is something the nurse just did deliberately
+   * and expects to move on from — yanking them to the other tab would take away
+   * the list they need next.
+   */
   const pinnedLeftQueue = pinned !== null && pinned.state === "IN TREATMENT";
 
   /*
@@ -51,6 +69,16 @@ export default function AssessmentPage() {
    */
   const [view, setView] = useState<"waiting" | "treatment">("waiting");
   const listed = view === "waiting" ? waiting : inTreatment;
+
+  /*
+   * Never show an empty right-hand side while there is somebody on the list.
+   *
+   * The panels used to go blank whenever the pinned patient left the board, and
+   * "no patient" is a worse answer than "the one at the top" — the top of the
+   * attention queue is exactly who a nurse should be looking at next anyway.
+   * A deliberate selection still wins; this only fills the gap.
+   */
+  const selected = pinned ?? listed[0] ?? null;
 
   const scroller = useRef<HTMLDivElement>(null);
   const flipRef = useFlip(rows.map((r) => r.ticket), scroller);
@@ -104,7 +132,8 @@ export default function AssessmentPage() {
         <Stat label="Waiting" value={snapshot.waiting} hint="Patients in the queue now." />
         <Stat label="In treatment" value={`${snapshot.in_treatment} of ${snapshot.slots}`}
               hint="Rooms in use. When one frees up, the most urgent waiting patient goes next." />
-        <Stat label="Checked out" value={snapshot.seen} hint="Treated and sent home or admitted." />
+        <Stat label="Waiting for a bay" value={awaitingBay.length}
+              hint="Triage is finished and nobody has taken them through yet. Shown with a red border." />
         <Stat label="Moved up" value={snapshot.escalated}
               hint="Patients ATRIA moved to a higher priority. It can never move anyone down." />
         <Stat label="Needs you" value={snapshot.abstained}
@@ -165,8 +194,10 @@ export default function AssessmentPage() {
               </>
             ) : (
               <>
-                Patients already in a bay. They are not waiting for you — this
-                is here so you can see who is where.
+                Triage is finished for these patients.{" "}
+                <b className="text-ok">Green</b> means they are in a bay being
+                treated. <b className="text-danger">Red</b> means you have signed
+                them off and nobody has taken them through yet.
                 <br />
                 <span className="text-ink3">
                   Tap one to read their record or report a change.
@@ -179,12 +210,19 @@ export default function AssessmentPage() {
                      flipRef={flipRef} scroller={scroller}
                      label={view === "waiting" ? "Attention order" : "Treatment bay"}
                      emptyMessage={view === "waiting"
-                       ? "Nobody waiting."
-                       : "No one in a treatment bay."} />
+                       ? "Everybody waiting has been assessed."
+                       : "Nobody has been signed off yet."} />
         </section>
 
         <section aria-label="Nurse assessment">
-          <h2 className="text-[17px] font-semibold mb-3">Nurse assessment</h2>
+          <h2 className="text-[17px] font-semibold mb-3">
+            Nurse assessment
+            {selected && !pinned && (
+              <span className="font-normal text-[14px] text-ink3">
+                {" "}— top of the list
+              </span>
+            )}
+          </h2>
           {selected
             ? <BlindAssessment key={selected.stay_id} row={selected} onChanged={refresh} />
             : <p className="text-[13px] text-ink3">Nobody waiting.</p>}
