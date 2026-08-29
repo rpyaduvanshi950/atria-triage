@@ -328,7 +328,7 @@ Makefile       every command
 | `make web` | the Next.js client on :3000 (run `make demo` alongside) |
 | `make demo` | the FastAPI build on :8000 |
 | `make scenarios` | seven deterministic demo cases |
-| `make test` | 234 tests |
+| `make test` | 236 tests |
 | `make freeze` | train once and pin the model artifact and manifest |
 | `make shadow` | run in shadow mode: every layer runs, nothing acts |
 | `make report` | regenerate `docs/results.md` and all figures |
@@ -385,6 +385,7 @@ pitch. The scorer trains once per container behind `@st.cache_resource`.
 | [`docs/business-proposal.md`](docs/business-proposal.md) | Problem framing, users, roadmap, risks |
 | [`docs/regulatory.md`](docs/regulatory.md) | Jurisdiction, SaMD class, liability, consent, bias |
 | [`docs/deck-changes.md`](docs/deck-changes.md) | What to fix in the pitch deck |
+| [`docs/pdf/ATRIA-explained.pdf`](docs/pdf/ATRIA-explained.pdf) | The whole system in plain words, 7 pages — written for the pitch, not for engineers |
 | [`docs/deployment.md`](docs/deployment.md) | Persistence, accounts and roles, the frozen model, shadow mode, FHIR |
 | [`docs/nextjs-migration.md`](docs/nextjs-migration.md) | The migration plan; phases 1–4 are built, phase 5 is not |
 | [`atria-web/README.md`](atria-web/README.md) | The Next.js client and the two rules for working on it |

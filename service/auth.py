@@ -41,16 +41,20 @@ SECRET = os.environ.get("ATRIA_SECRET") or secrets.token_urlsafe(48)
 #: What each role may do. Named capabilities rather than route lists, so a new
 #: endpoint has to state which permission it needs instead of inheriting access.
 PERMISSIONS: dict[str, set[str]] = {
-    "nurse":        {"queue:read", "assess:write", "worsening:write"},
+    # intake:write covers checking a patient in and recording their vitals —
+    # the two writes that create clinical data rather than judge it.
+    "nurse":        {"queue:read", "assess:write", "worsening:write",
+                     "intake:write"},
     "charge_nurse": {"queue:read", "assess:write", "worsening:write",
-                     "acknowledge:write", "ops:read", "history:read"},
+                     "intake:write", "acknowledge:write", "ops:read",
+                     "history:read"},
     "clinician":    {"queue:read", "assess:write", "worsening:write",
-                     "override:write", "history:read"},
+                     "intake:write", "override:write", "history:read"},
     "ops":          {"queue:read", "ops:read", "ops:write"},
     "auditor":      {"history:read"},
     "admin":        {"queue:read", "assess:write", "worsening:write",
-                     "acknowledge:write", "override:write", "ops:read",
-                     "ops:write", "history:read", "admin:write"},
+                     "intake:write", "acknowledge:write", "override:write",
+                     "ops:read", "ops:write", "history:read", "admin:write"},
 }
 
 #: Lowering a patient's urgency is a clinical act. Ops and auditors have no

@@ -181,7 +181,9 @@ async def audit(limit: int = 60,
 async def create_encounter(stay_id: int, age: float | None = None,
                            gender: str | None = None,
                            chiefcomplaint: str = "unspecified",
-                           arrival_transport: str = "walk-in") -> JSONResponse:
+                           arrival_transport: str = "walk-in",
+                           user: Principal = Depends(requires("intake:write"))
+                           ) -> JSONResponse:
     """Check in a new patient. In demo mode, arrivals come from the replay clock;
     this endpoint lets external integrations and the acceptance test suite inject
     patients directly."""
@@ -207,7 +209,9 @@ async def submit_observation(stay_id: int,
                              o2sat: float | None = None,
                              sbp: float | None = None,
                              dbp: float | None = None,
-                             temperature: float | None = None) -> JSONResponse:
+                             temperature: float | None = None,
+                             user: Principal = Depends(requires("intake:write")),
+                             ) -> JSONResponse:
     """Submit a vitals observation for a checked-in patient."""
     import pandas as _pd
     from service.clock import Event

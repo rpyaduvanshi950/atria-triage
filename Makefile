@@ -1,4 +1,4 @@
-.PHONY: help setup test test-all status demo streamlit scenarios eval fairness figures report extract-yale freeze shadow clean
+.PHONY: help setup test test-all status demo streamlit scenarios eval fairness figures report extract-yale freeze shadow explainer clean
 
 help:
 	@echo "ATRIA — Accenture Innovation Challenge 2026, Track 2"
@@ -18,6 +18,7 @@ help:
 	@echo "  make extract-yale  extract the Yale slim CSV (needs R)"
 	@echo "  make freeze        train once and pin the model artifact + manifest"
 	@echo "  make shadow        start the board in shadow mode (nothing acts)"
+	@echo "  make explainer     re-render the plain-words PDF from its HTML source"
 
 setup:
 	python3 -m venv .venv
@@ -41,6 +42,14 @@ shadow:
 
 freeze:
 	.venv/bin/python -m ml.freeze
+
+# Edit docs/pdf/atria-explained.html, then re-render. WeasyPrint comes from the
+# system, not the venv: `sudo apt install weasyprint`.
+explainer:
+	@command -v weasyprint >/dev/null 2>&1 || { \
+	  echo "weasyprint not installed. Run: sudo apt install weasyprint"; exit 1; }
+	weasyprint docs/pdf/atria-explained.html docs/pdf/ATRIA-explained.pdf
+	@echo "wrote docs/pdf/ATRIA-explained.pdf"
 
 streamlit:
 	.venv/bin/streamlit run streamlit_app.py

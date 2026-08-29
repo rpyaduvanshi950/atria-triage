@@ -136,6 +136,35 @@
 </style>
 </head>
 <body>
+<!-- Sign-in. Hidden by default and shown the moment a call comes back 401, so a
+     rejected session is visible instead of an empty board. -->
+<div id="signin" hidden style="position:fixed;inset:0;z-index:50;display:grid;
+     place-items:center;background:rgba(12,18,20,.86);backdrop-filter:blur(3px)">
+  <form onsubmit="signIn(event)" style="background:#12191c;border:1px solid #2a3a3f;
+        border-radius:14px;padding:26px;width:min(420px,92vw);font-size:15px">
+    <h2 style="margin:0 0 6px;font-size:20px">Sign in to ATRIA</h2>
+    <p style="margin:0 0 16px;color:#9db1b6;line-height:1.5">
+      Every override and sign-off is recorded against the person who made it.
+      Demo accounts: <b>nurse.demo</b>, <b>doc.demo</b>, <b>admin.demo</b> —
+      each password is the same as the username.
+    </p>
+    <label style="display:block;margin-bottom:10px">Username
+      <input id="si-user" value="admin.demo" autocomplete="username"
+             style="width:100%;margin-top:4px;padding:10px;border-radius:9px;
+                    border:1px solid #2a3a3f;background:#0c1214;color:inherit;font-size:15px">
+    </label>
+    <label style="display:block;margin-bottom:14px">Password
+      <input id="si-pass" type="password" value="admin.demo" autocomplete="current-password"
+             style="width:100%;margin-top:4px;padding:10px;border-radius:9px;
+                    border:1px solid #2a3a3f;background:#0c1214;color:inherit;font-size:15px">
+    </label>
+    <p id="signin-error" role="alert" style="color:#ff8080;margin:0 0 12px;min-height:1.2em"></p>
+    <button type="submit" style="width:100%;padding:12px;border-radius:9px;border:0;
+            background:#45c4b2;color:#06231f;font-weight:700;font-size:16px;cursor:pointer">
+      Sign in
+    </button>
+  </form>
+</div>
 <header>
   <h1>ATRIA · Bay A</h1>
   <span class="sub">a live queue, not a label</span>
@@ -287,6 +316,51 @@
 
 <script>
 const board = document.getElementById('board');
+/*
+ * Signing in.
+ *
+ * This board is served from the engine itself, so it used to call the API with
+ * no credentials at all. Once every route required a bearer token that meant a
+ * page that rendered perfectly and then sat empty forever — the calls came back
+ * 401 and the websocket was refused outright, with nothing on screen to say so.
+ *
+ * The overlay below is the smallest thing that fixes it. It is not a login
+ * system; the Next.js client has that. It exists so this board keeps working
+ * and so a failure to authenticate is visible rather than silent.
+ */
+let TOKEN = sessionStorage.getItem('atria.token') || '';
+
+async function authed(path, init){
+  const res = await fetch(path, {
+    ...init,
+    headers: {...(init && init.headers), Authorization: `Bearer ${TOKEN}`},
+  });
+  if(res.status === 401){ TOKEN = ''; sessionStorage.removeItem('atria.token'); showSignIn(); }
+  return res;
+}
+
+function showSignIn(msg){
+  document.getElementById('signin').hidden = false;
+  document.getElementById('signin-error').textContent = msg || '';
+}
+
+async function signIn(ev){
+  ev.preventDefault();
+  const u = document.getElementById('si-user').value.trim();
+  const p = document.getElementById('si-pass').value;
+  const res = await fetch('/v1/auth/token', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({username: u, password: p}),
+  });
+  if(!res.ok){ showSignIn('Incorrect username or password.'); return; }
+  TOKEN = (await res.json()).access_token;
+  sessionStorage.setItem('atria.token', TOKEN);
+  document.getElementById('signin').hidden = true;
+  connect();
+  refreshAudit();
+}
+
 const dlg = document.getElementById('ovr');
 let target = null, currentBand = 3;
 
@@ -305,11 +379,11 @@ dlg.addEventListener('close', () => {
   if(dlg.returnValue !== 'ok' || target === null) return;
   const band = document.getElementById('ovr-band').value;
   const reason = document.getElementById('ovr-reason').value;
-  fetch(`/api/override/${target}/${band}?reason_code=${reason}`, {method:'POST'});
+  authed(`/api/override/${target}/${band}?reason_code=${reason}`, {method:'POST'});
   target = null;
 });
 function accept(stayId){
-  fetch(`/api/override/${stayId}/0?reason_code=accepted`, {method:'POST'});
+  authed(`/api/override/${stayId}/0?reason_code=accepted`, {method:'POST'});
 }
 
 function render(s){
@@ -376,7 +450,9 @@ function toggleAudit(){
 }
 async function refreshAudit(){
   if(!auditOn) return;
-  const r = await (await fetch('/api/audit')).json();
+  const res = await authed('/api/audit');
+  if(!res.ok) return;
+  const r = await res.json();
   const st = document.getElementById('audit-state');
   st.textContent = r.intact ? `chain intact · ${r.entries} entries`
                             : `CHAIN BROKEN — ${r.note}`;
@@ -393,9 +469,17 @@ async function refreshAudit(){
 setInterval(refreshAudit, 2500);
 
 function connect(){
-  const ws = new WebSocket(`ws://${location.host}/ws`);
+  if(!TOKEN){ showSignIn(); return; }
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(TOKEN)}`);
   ws.onmessage = e => render(JSON.parse(e.data));
-  ws.onclose = () => setTimeout(connect, 1200);
+  ws.onclose = ev => {
+    // 4401 is this server saying the token is no good. Reconnecting on a loop
+    // with the same bad token is how a board ends up silently empty.
+    if(ev.code === 4401){ TOKEN = ''; sessionStorage.removeItem('atria.token');
+                          showSignIn('Session expired. Sign in again.'); return; }
+    setTimeout(connect, 1200);
+  };
 }
 connect();
 </script>

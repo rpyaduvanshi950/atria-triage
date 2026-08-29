@@ -365,3 +365,57 @@ def test_a_durable_log_is_not_swapped_for_an_empty_one(db_path):
     for e in build_events(generate(4, seed=5)):
         q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
     assert len(AuditLog(store=AuditStore(db_path))) > 0, "nothing reached the disk"
+
+
+# --- every route, not just the ones someone remembered -----------------------
+
+#: Routes that are meant to be reachable without signing in. The HTML shells
+#: carry no patient data — they are empty documents that then have to
+#: authenticate — and the token endpoint is how you sign in at all.
+PUBLIC_PATHS = {"/", "/guide", "/v1/auth/token", "/v1/auth/me",
+                "/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"}
+
+
+def test_no_route_is_accidentally_public(api):
+    """
+    The guard against the next endpoint. Adding a route to service/app.py and
+    forgetting the Depends is a one-line mistake that exposes the whole queue,
+    and it would not fail any test that only checks the routes someone thought
+    to list here.
+    """
+    client, app_module = api
+    exposed = []
+    for route in app_module.app.routes:
+        path = getattr(route, "path", "")
+        methods = getattr(route, "methods", set()) or set()
+        if path in PUBLIC_PATHS or not methods:
+            continue
+        # Substitute something harmless for path parameters.
+        concrete = path.replace("{stay_id}", "1").replace("{on}", "1") \
+                       .replace("{band}", "3").replace("{patient_id}", "x")
+        for method in methods & {"GET", "POST"}:
+            r = client.request(method, concrete)
+            if r.status_code != 401:
+                exposed.append(f"{method} {path} -> {r.status_code}")
+    assert not exposed, "these answer without a token: " + "; ".join(exposed)
+
+
+def test_the_served_dashboard_authenticates_every_call(api):
+    """
+    Regression, and one that shipped. The board served at :8000 called the API
+    with no credentials. Once the routes required a token it rendered perfectly
+    and then sat empty forever — 401 on every poll, websocket refused, and
+    nothing on screen to say why. A page that fails silently is worse than one
+    that fails.
+    """
+    from pathlib import Path
+    import re
+
+    html = Path("dashboard/index.html").read_text()
+
+    bare = re.findall(r"[^a-zA-Z]fetch\(\s*[`'\"](/api/|/v1/(?!auth/token))", html)
+    assert not bare, f"unauthenticated API calls in the dashboard: {bare}"
+
+    assert "authed(" in html, "the authenticated fetch wrapper is gone"
+    assert "?token=" in html, "the websocket must carry the token in the query string"
+    assert "4401" in html, "a rejected token must stop the reconnect loop"
