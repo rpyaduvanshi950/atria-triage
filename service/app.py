@@ -130,6 +130,21 @@ async def token(form: OAuth2PasswordRequestForm = Depends()) -> JSONResponse:
     return JSONResponse(auth.issue_token(principal))
 
 
+@app.get("/v1/auth/mode")
+async def auth_mode() -> JSONResponse:
+    """
+    Is authentication on, and are the demo accounts live?
+
+    Deliberately public and deliberately separate from /me. The board has to ask
+    this before it can know whether to show a sign-in screen, and asking /me
+    without a token answered 401 — so every visit opened with a red error in the
+    console. Console noise on a normal page load is not harmless: it is where a
+    real error goes to hide.
+    """
+    return JSONResponse({"auth_enabled": auth.AUTH_ENABLED,
+                         "demo_accounts": auth.DEMO_MODE})
+
+
 @app.get("/v1/auth/me")
 async def me(user: Principal = Depends(auth.current_user)) -> JSONResponse:
     """Who the browser is signed in as, and what that role may do."""

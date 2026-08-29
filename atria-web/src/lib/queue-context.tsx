@@ -73,7 +73,18 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     return () => {
       closed = true;
       if (retry.current) clearTimeout(retry.current);
-      socket.current?.close();
+      const ws = socket.current;
+      if (!ws) return;
+      // Closing a socket that is still shaking hands makes the browser log
+      // "closed before the connection is established". It is harmless, and in
+      // development React mounts every effect twice so it happens on every
+      // load — which trains you to ignore console warnings, right up until one
+      // of them matters. Wait for the handshake, then close.
+      if (ws.readyState === WebSocket.CONNECTING) {
+        ws.onopen = () => ws.close();
+      } else {
+        ws.close();
+      }
     };
   }, [refresh]);
 

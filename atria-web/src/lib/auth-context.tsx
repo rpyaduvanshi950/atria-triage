@@ -41,22 +41,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!session.token) {
-        // Auth can be switched off for a projector demo, in which case /me
-        // answers anyway. Asking is how we find out.
-        try {
+      try {
+        if (session.token) {
+          // Ask the server who this token belongs to rather than trusting a
+          // decoded copy in the browser. Only the server knows whether it has
+          // expired or been revoked.
           const me = await api.me();
           if (!cancelled) setUser(me);
-        } catch {
-          /* not signed in — the sign-in screen renders */
+        } else {
+          // No token. Auth can be switched off for a projector demo, in which
+          // case there is nobody to sign in as and the board should just open.
+          // This asks a public endpoint: probing /me without a token answered
+          // 401 and put a red error in the console on every single visit.
+          const mode = await api.mode();
+          if (!mode.auth_enabled && !cancelled) setUser(await api.me());
         }
-      } else {
-        try {
-          const me = await api.me();
-          if (!cancelled) setUser(me);
-        } catch {
-          session.set(null);
-        }
+      } catch {
+        session.set(null);   // the sign-in screen renders
       }
       if (!cancelled) setLoading(false);
     })();

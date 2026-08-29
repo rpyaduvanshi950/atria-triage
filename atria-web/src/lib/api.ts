@@ -111,6 +111,10 @@ export const api = {
   /** Who we are signed in as, and what that role is allowed to do. */
   me: () => request<User>("/v1/auth/me"),
 
+  /** Public: whether signing in is required at all. Never 401s. */
+  mode: () => request<{ auth_enabled: boolean; demo_accounts: boolean }>(
+    "/v1/auth/mode"),
+
   queue: () => request<Snapshot>("/v1/queue"),
 
   /** Blind ESI. The response deliberately carries no recommendation. */

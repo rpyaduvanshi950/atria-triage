@@ -372,7 +372,7 @@ def test_a_durable_log_is_not_swapped_for_an_empty_one(db_path):
 #: Routes that are meant to be reachable without signing in. The HTML shells
 #: carry no patient data — they are empty documents that then have to
 #: authenticate — and the token endpoint is how you sign in at all.
-PUBLIC_PATHS = {"/", "/guide", "/v1/auth/token", "/v1/auth/me",
+PUBLIC_PATHS = {"/", "/guide", "/v1/auth/token", "/v1/auth/me", "/v1/auth/mode",
                 "/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"}
 
 
@@ -419,3 +419,17 @@ def test_the_served_dashboard_authenticates_every_call(api):
     assert "authed(" in html, "the authenticated fetch wrapper is gone"
     assert "?token=" in html, "the websocket must carry the token in the query string"
     assert "4401" in html, "a rejected token must stop the reconnect loop"
+
+
+def test_asking_whether_auth_is_on_is_not_itself_an_error(api):
+    """
+    The board has to know whether to show a sign-in screen before it can have a
+    token. Answering that with a 401 meant a red console error on every visit,
+    which is where a real error goes to hide.
+    """
+    client, _ = api
+    r = client.get("/v1/auth/mode")
+    assert r.status_code == 200
+    assert set(r.json()) == {"auth_enabled", "demo_accounts"}
+    # and it must not leak anything about who exists
+    assert "users" not in r.text and "nurse.demo" not in r.text

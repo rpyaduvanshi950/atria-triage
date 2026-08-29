@@ -45,6 +45,21 @@ export function QueueList({ rows, selectedTicket, onSelect, flipRef, scroller }:
     // something to animate, and so scrolling does not flash empty space.
     overscan: 6,
     getItemKey: (i) => rows[i].ticket,
+    /*
+     * By default the virtualiser applies each row measurement inside
+     * flushSync, to avoid a flicker while a fast scroll re-measures. Rows here
+     * are measured by a ref callback, which React runs during commit — and
+     * flushing synchronously from inside a commit is what React was warning
+     * about: "flushSync was called from inside a lifecycle method".
+     *
+     * Turning it off lets the measurement land on the next ordinary render.
+     * The flicker it guards against needs rows of wildly differing heights
+     * scrolled quickly; these are near-uniform cards in a 640px window, and
+     * nothing is visible. The warning was pointing at something real — React
+     * can drop or mis-order a synchronous flush issued mid-commit — so this is
+     * a fix rather than a way to silence it.
+     */
+    useFlushSync: false,
   });
 
   // Follow the selection. Without this, j/k walks off the bottom of the visible
