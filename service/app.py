@@ -67,13 +67,17 @@ DEMO_SEED = int(os.environ.get("ATRIA_DEMO_SEED", "7"))           # same cast
 DEMO_PATIENTS = int(os.environ.get("ATRIA_DEMO_PATIENTS", "100"))
 DEMO_HOURS = float(os.environ.get("ATRIA_DEMO_HOURS", "3"))
 
-#: Treatment bays for the demo. The engine defaults to 3, which is right for a
-#: scenario fixture exercising triage logic and wrong for a hundred arrivals:
-#: three bays clear about sixteen patients in three hours, so the queue would
-#: grow to eighty-four and never drain. Twelve leaves a real, working queue of
-#: roughly thirty-five, which is a department under pressure rather than a
-#: department that has stopped.
-DEMO_SLOTS = int(os.environ.get("ATRIA_DEMO_SLOTS", "12"))
+#: Treatment bays. Adjustable from the board, because how many bays are open is
+#: an operational fact that changes during a shift, not a constant.
+#:
+#: Five against a hundred arrivals is a department under real pressure, which is
+#: the state worth demonstrating: the queue builds, and the order ATRIA puts it
+#: in starts to matter. Open more bays from the board to watch it drain.
+DEMO_SLOTS = int(os.environ.get("ATRIA_DEMO_SLOTS", "5"))
+
+#: Ceiling on what the board may open, so a stray click cannot make the queue
+#: vanish and take the demonstration with it.
+MAX_SLOTS = 20
 
 #: ATRIA_DB points the audit trail at a SQLite file that outlives the process.
 #: Unset means in-memory, which is right for a test and wrong for a deployment,
@@ -102,6 +106,59 @@ async def startup() -> None:
     asyncio.create_task(_replay())
 
 
+#: How many patients the demo leaves at the top of the queue for the human.
+#: The simulated colleagues work from the tail, so the person using the board is
+#: never racing them for the patient they are about to open — that was the
+#: "record changed under me" bug, and it is not worth reintroducing for a demo.
+HUMAN_HEADROOM = int(os.environ.get("ATRIA_DEMO_HEADROOM", "6"))
+
+
+def _simulated_colleagues() -> None:
+    """
+    Other nurses, working the same shift.
+
+    A patient must be triaged before a bay will take them, which is correct and
+    leaves a one-person demo with an empty department: a hundred arrivals, one
+    human, and nothing ever reaching treatment. So the rest of the team is
+    simulated.
+
+    They work from the BOTTOM of the queue and never touch the top few, so the
+    patient the user is about to open is always theirs. Every sign-off goes
+    through the real workflow and lands in the audit under a name that says it
+    was simulated, because a trail that quietly mixes real and synthetic
+    decisions is worse than one that is obviously synthetic.
+    """
+    waiting_for_bay = sum(1 for p in engine.patients.values() if p.signed_off)
+    if waiting_for_bay >= engine.slots:
+        return                                  # bays are already fed
+
+    unassessed = [(k, v) for k, v in engine.patients.items()
+                  if not v.signed_off and not engine.mid_assessment(k)]
+    if len(unassessed) <= HUMAN_HEADROOM:
+        return                                  # leave the rest to the human
+
+    # Same order the board shows, so "the tail" means the same thing to both.
+    unassessed.sort(key=lambda kv: (kv[1].band, -kv[1].waited(engine.now)))
+
+    # Walk on past anyone who refuses rather than stopping at them. The list is
+    # sorted, so retrying only the first two meant that if those two happened to
+    # be unassessable the colleagues picked the same pair on every event and
+    # never signed anybody off again for the rest of the shift.
+    done = 0
+    for stay_id, patient in unassessed[HUMAN_HEADROOM:]:
+        if done >= 2:
+            break
+        try:
+            stored = engine.nurse_assess(stay_id, patient.band)
+            engine.reveal(stay_id, token=stored.get("reveal_token"))
+            engine.finalise(stay_id, clinician="nurse.sim (simulated colleague)",
+                            reason_code="reassessed_at_bedside")
+            done += 1
+        except Exception:
+            # A simulated colleague must never be able to stop the shift.
+            continue
+
+
 async def _replay(speed: float | None = None, surge: float = 1.0) -> None:
     """
     Replay one synthetic shift on loop, so the board is never empty.
@@ -121,6 +178,7 @@ async def _replay(speed: float | None = None, surge: float = 1.0) -> None:
                 engine.on_arrival(event)
             else:
                 engine.on_vitals(event)
+            _simulated_colleagues()
             await _broadcast()
         await asyncio.sleep(6)
 
@@ -389,6 +447,25 @@ async def set_shadow(on: int,
                         enabled=engine.shadow, clinician=user.username)
     await _broadcast()
     return {"shadow": engine.shadow}
+
+
+@app.post("/v1/operations/bays/{count}")
+async def set_bays(count: int,
+                   user: Principal = Depends(requires("ops:write"))) -> JSONResponse:
+    """
+    Open or close treatment bays.
+
+    Closing a bay never turns anyone out: capacity is checked when the next
+    patient is pulled in, so people already being treated finish. It is an
+    operational change and it is audited like one.
+    """
+    count = max(0, min(MAX_SLOTS, count))
+    before, engine.slots = engine.slots, count
+    engine.audit.append("bays_changed", 0, engine.now,
+                        frm=before, to=count, clinician=user.username)
+    await _broadcast()
+    return JSONResponse({"slots": engine.slots, "in_treatment": len(engine.in_treatment),
+                         "max": MAX_SLOTS})
 
 
 @app.get("/v1/queue")

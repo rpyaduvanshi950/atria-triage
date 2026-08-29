@@ -344,7 +344,21 @@ class QueueEngine:
                 patient.band = new
                 patient.state = "ESCALATED"
                 patient.reasons = t.reasons
+                # Deterioration after sign-off is new clinical evidence, so the
+                # decision reopens — exactly as it does when a nurse reports a
+                # change by hand.
+                #
+                # Clearing the flag without reopening the workflow left the two
+                # disagreeing: the patient said "not signed off", the workflow
+                # said "signed". Nothing could then assess them (the workflow
+                # refuses a second cycle) and nothing could treat them (a bay
+                # only takes the signed-off), so they sat on the board for the
+                # rest of the shift, escalating and unreachable.
+                if patient.signed_off:
+                    self.workflow.open(patient.stay_id).reopen(
+                        "deterioration detected by trajectory")
                 patient.signed_off = False
+                patient.signed_off_at = None
                 change = dict(stay_id=patient.stay_id, at=str(self.now),
                               frm=patient.band_before, to=new, reasons=list(t.reasons))
                 self.events_log.append(change)
@@ -380,12 +394,21 @@ class QueueEngine:
                                   waited_minutes=round(p.waited(p.seen_at)))
 
         while len(self.in_treatment) < self.slots:
-            # A patient the nurse is part-way through assessing is not available
-            # to be moved. Taking them through mid-decision destroys the blind
-            # cycle they are in, and is wrong in the room too: you do not wheel
+            # Two conditions, and the first is the point of the whole product.
+            #
+            # A patient must be TRIAGED before they are taken through. Without
+            # this, a free bay pulled whoever was most urgent straight out of
+            # the arrivals list, so on an empty department the first patients
+            # went to treatment having never been assessed at all — the board
+            # opened with an empty attention queue and a full treatment bay,
+            # which is precisely backwards.
+            #
+            # And a patient the nurse is part-way through assessing is not
+            # available to be moved. Taking them through mid-decision destroys
+            # the blind cycle, and is wrong in the room too: you do not wheel
             # someone away while they are being triaged.
             available = {k: v for k, v in self.patients.items()
-                         if not self.mid_assessment(k)}
+                         if v.signed_off and not self.mid_assessment(k)}
             if not available:
                 break
             # highest urgency first, then longest wait — the queue's whole job

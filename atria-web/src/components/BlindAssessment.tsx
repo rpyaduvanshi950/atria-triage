@@ -232,25 +232,11 @@ export function BlindAssessment({ row, onChanged }: {
         </>
       ) : (
         /*
-         * Signing off happens over the whole screen, not in a column.
-         *
-         * It is the one moment that cannot be half-done: the board behind is
-         * still moving, and a nurse deciding whether to accept or overrule a
-         * recommendation should not be reading a re-ranking queue out of the
-         * corner of their eye. Blurring it says the rest can wait without
-         * hiding that it is still there.
+         * Compare and sign off, in the column. It was briefly a modal over a
+         * blurred board; that took the queue away at the moment a nurse most
+         * wants to glance at it, so it is inline again.
          */
-        <div className="fixed inset-0 z-40 flex items-start justify-center
-                        overflow-y-auto p-4 sm:p-8"
-             role="dialog" aria-modal="true" aria-label="Compare and sign off">
-          <div className="fixed inset-0 bg-ink/25 backdrop-blur-sm" aria-hidden />
-          <div className="relative w-full max-w-[560px] rounded-2xl bg-card
-                          border border-line shadow-xl p-5 my-auto">
-            <div className="flex items-baseline gap-2 mb-3">
-              <span className="text-[17px] font-semibold">{row.ticket}</span>
-              <span className="text-[15px] text-ink2">{row.complaint}</span>
-            </div>
-
+        <>
           {/* One card, and it is the nurse's. ATRIA's number belongs with the
               reasons for it, not beside yours as an equal claim. */}
           <Card label="Your priority" esi={view.nurse_esi} highlight />
@@ -311,8 +297,7 @@ export function BlindAssessment({ row, onChanged }: {
               </button>
             </>
           )}
-          </div>
-        </div>
+        </>
       )}
 
       <button disabled={busy} onClick={() => run(() => api.worsening(row.stay_id))}

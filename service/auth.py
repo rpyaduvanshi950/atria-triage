@@ -45,9 +45,13 @@ PERMISSIONS: dict[str, set[str]] = {
     # the two writes that create clinical data rather than judge it.
     "nurse":        {"queue:read", "assess:write", "worsening:write",
                      "intake:write"},
+    # Opening and closing bays is the charge nurse's job in a real department,
+    # so it is theirs here. A triage nurse can see the count and cannot change
+    # it — the board hides the control rather than letting them press a button
+    # that answers 403.
     "charge_nurse": {"queue:read", "assess:write", "worsening:write",
                      "intake:write", "acknowledge:write", "ops:read",
-                     "history:read"},
+                     "ops:write", "history:read"},
     "clinician":    {"queue:read", "assess:write", "worsening:write",
                      "intake:write", "override:write", "history:read"},
     "ops":          {"queue:read", "ops:read", "ops:write"},

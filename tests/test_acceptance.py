@@ -506,8 +506,21 @@ def test_holding_one_patient_does_not_stall_the_queue():
     if waiting:
         sid = waiting[0]["stay_id"]
         q.nurse_assess(sid, 3)
+    # A bay only takes a patient who has been triaged, so the rest of the
+    # department has to be worked for there to be anything to stall. The held
+    # patient is deliberately left alone.
     for e in events[40:]:
         q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
+        for other in list(q.patients):
+            if other == sid or q.patients[other].signed_off:
+                continue
+            try:
+                stored = q.nurse_assess(other, q.patients[other].band)
+                q.reveal(other, token=stored["reveal_token"])
+                q.finalise(other, clinician="nurse.test",
+                           reason_code="reassessed_at_bedside")
+            except Exception:
+                continue
     assert q.snapshot()["seen"] > 0, "the department stopped treating anyone"
 
 

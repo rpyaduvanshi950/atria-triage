@@ -328,7 +328,7 @@ Makefile       every command
 | `make web` | the Next.js client on :3000 (run `make demo` alongside) |
 | `make demo` | the FastAPI build on :8000 |
 | `make scenarios` | seven deterministic demo cases |
-| `make test` | 254 tests |
+| `make test` | 259 tests |
 | `make freeze` | train once and pin the model artifact and manifest |
 | `make shadow` | run in shadow mode: every layer runs, nothing acts |
 | `make report` | regenerate `docs/results.md` and all figures |

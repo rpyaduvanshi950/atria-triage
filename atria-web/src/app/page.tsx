@@ -5,11 +5,14 @@ import clsx from "clsx";
 import { useQueue } from "@/lib/queue-context";
 import { useFlip } from "@/lib/useFlip";
 import { QueueList } from "@/components/QueueList";
+import { AddPatient } from "@/components/AddPatient";
 import { Announcer } from "@/components/Announcer";
 import { BlindAssessment } from "@/components/BlindAssessment";
 import { PatientRecord } from "@/components/PatientRecord";
 import { LANE_NAME } from "@/types/copy";
-import type { QueueRow } from "@/types/atria";
+import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import type { QueueRow, Snapshot } from "@/types/atria";
 
 export default function AssessmentPage() {
   const { snapshot, status, refresh } = useQueue();
@@ -72,6 +75,7 @@ export default function AssessmentPage() {
    * still needing you. Two views in one place, and the tab says how many are
    * in each, so nothing is hidden by being on the other tab.
    */
+  const [adding, setAdding] = useState(false);
   const [view, setView] = useState<"waiting" | "treatment">("waiting");
   const listed = view === "waiting" ? waiting : inTreatment;
 
@@ -133,16 +137,28 @@ export default function AssessmentPage() {
   return (
     <>
       <Announcer />
+      {adding && (
+        <AddPatient onClose={() => setAdding(false)} onAdded={refresh} />
+      )}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
         <Stat label="Waiting" value={snapshot.waiting} hint="Patients in the queue now." />
-        <Stat label="In treatment" value={`${snapshot.in_treatment} of ${snapshot.slots}`}
-              hint="Rooms in use. When one frees up, the most urgent waiting patient goes next." />
+        <Stat label="Treated" value={snapshot.seen}
+              hint="Finished treatment and left the department." />
         <Stat label="Waiting for a bay" value={awaitingBay.length}
               hint="Triage is finished and nobody has taken them through yet. Shown with a red border." />
         <Stat label="Moved up" value={snapshot.escalated}
               hint="Patients ATRIA moved to a higher priority. It can never move anyone down." />
-        <Stat label="Needs you" value={snapshot.abstained}
-              hint="ATRIA would not give a score. Too little information to be safe." />
+        <Bays snapshot={snapshot} onChanged={refresh} />
+
+        <button onClick={() => setAdding(true)}
+                className="card border border-brand bg-brandsoft px-4 py-3 text-left
+                           hover:bg-brand hover:text-white transition-colors group">
+          <div className="text-[14px] text-brand group-hover:text-white">New arrival</div>
+          <div className="text-[19px] font-bold mt-0.5 leading-tight text-brand
+                          group-hover:text-white">
+            Add a patient
+          </div>
+        </button>
       </div>
 
       {snapshot.degraded && (
@@ -236,6 +252,59 @@ export default function AssessmentPage() {
         </section>
       </div>
     </>
+  );
+}
+
+/**
+ * How many treatment bays are open.
+ *
+ * Capacity is an operational fact that changes during a shift, not a constant,
+ * and it is the single lever that shows what the queue is for: close bays and
+ * the order ATRIA puts people in starts to matter; open them and it drains.
+ *
+ * Closing one never turns anybody out. Capacity is checked when the next
+ * patient is pulled in, so people already in a bay finish.
+ */
+function Bays({ snapshot, onChanged }: { snapshot: Snapshot; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  // Opening a bay is the charge nurse's call. A triage nurse sees the number
+  // and not the buttons, rather than pressing something that answers 403.
+  const { can } = useAuth();
+  const mayChange = can("ops:write");
+
+  const change = async (to: number) => {
+    if (busy) return;
+    setBusy(true);
+    try { await api.setBays(to); onChanged(); }
+    catch { /* the next snapshot will show the truth either way */ }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="card border border-line px-4 py-3">
+      <div className="text-[14px] text-ink2">Treatment bays</div>
+      <div className="flex items-center gap-2 mt-0.5">
+        {mayChange && (
+          <button aria-label="Close a bay" disabled={busy || snapshot.slots <= 0}
+                  onClick={() => change(snapshot.slots - 1)}
+                  className="w-7 h-7 rounded-lg border border-line text-[17px]
+                             leading-none disabled:opacity-30">
+            −
+          </button>
+        )}
+        <span className="text-[26px] font-bold leading-none tabular-nums">
+          {snapshot.in_treatment}/{snapshot.slots}
+        </span>
+        {mayChange && (
+          <button aria-label="Open a bay" disabled={busy}
+                  onClick={() => change(snapshot.slots + 1)}
+                  className="w-7 h-7 rounded-lg border border-line text-[17px]
+                             leading-none disabled:opacity-30">
+            +
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 

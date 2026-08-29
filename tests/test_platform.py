@@ -507,19 +507,27 @@ def test_the_demo_shift_is_reproducible():
     assert sum(1 for e in a if e.kind == "arrival") == app_module.DEMO_PATIENTS
 
 
-def test_the_demo_department_can_actually_treat_its_arrivals():
+def test_the_demo_department_is_busy_but_not_stalled():
     """
-    Capacity has to bear some relation to volume. Three bays clear about sixteen
-    patients in three hours, so a hundred arrivals would queue to eighty-four
-    and never drain — a department that has stopped, not one under pressure.
+    The demo runs deliberately short of capacity: five bays against a hundred
+    arrivals, so the queue builds and the order ATRIA puts it in starts to
+    matter. That is the state worth showing, and the bay control on the board is
+    there to relieve it.
+
+    Both bounds still matter. A department that treats almost nobody looks
+    broken rather than busy, and one that clears everyone has no queue left to
+    demonstrate.
     """
     import service.app as app_module
     from service.queue import TREATMENT_MINUTES
 
     average_stay = sum(TREATMENT_MINUTES.values()) / len(TREATMENT_MINUTES)
     treated = app_module.DEMO_SLOTS * (app_module.DEMO_HOURS * 60 / average_stay)
-    assert treated >= 0.5 * app_module.DEMO_PATIENTS, "most arrivals never get seen"
-    assert treated <= 0.95 * app_module.DEMO_PATIENTS, "no queue left to demonstrate"
+    share = treated / app_module.DEMO_PATIENTS
+    assert share >= 0.15, f"only {share:.0%} of arrivals get seen; that reads as broken"
+    assert share <= 0.95, "no queue left to demonstrate"
+    # and the board can relieve it without a restart
+    assert app_module.MAX_SLOTS > app_module.DEMO_SLOTS
 
 
 def test_a_shift_fits_in_a_demo_slot():
@@ -528,3 +536,58 @@ def test_a_shift_fits_in_a_demo_slot():
 
     minutes = app_module.DEMO_HOURS * 3600 / app_module.DEMO_SPEED / 60
     assert 3 <= minutes <= 15, f"a {minutes:.0f} minute shift is not demoable"
+
+
+# --- treatment capacity ------------------------------------------------------
+
+def test_only_a_charge_nurse_can_open_or_close_bays(api):
+    """
+    Capacity is the charge nurse's job in a real department, so it is theirs
+    here. A triage nurse sees the count and does not get a button that answers
+    403.
+    """
+    client, _ = api
+    assert client.post("/v1/operations/bays/9",
+                       headers=_login(client, "nurse.demo")).status_code == 403
+    assert client.post("/v1/operations/bays/9",
+                       headers=_login(client, "charge.demo")).status_code == 200
+
+
+def test_bay_count_is_clamped_and_audited(api):
+    """A stray click must not make the queue vanish and take the demo with it."""
+    import service.app as app_module
+
+    client, engine_module = api
+    charge = _login(client, "charge.demo")
+
+    assert client.post("/v1/operations/bays/9999", headers=charge).json()["slots"] \
+        == app_module.MAX_SLOTS
+    assert client.post("/v1/operations/bays/-5", headers=charge).json()["slots"] == 0
+
+    entries = [r for r in engine_module.engine.audit.as_rows(50)
+               if r["kind"] == "bays_changed"]
+    assert entries, "a capacity change must be audited"
+    assert entries[-1]["clinician"] == "charge.demo"
+
+
+def test_closing_a_bay_does_not_turn_anybody_out(api):
+    """
+    Capacity is checked when the next patient is pulled in, so people already
+    being treated finish. Ejecting a patient to satisfy a number would be a
+    remarkable thing for a triage board to do.
+    """
+    client, engine_module = api
+    engine = engine_module.engine
+    charge = _login(client, "charge.demo")
+
+    engine.slots = 5
+    for stay_id in list(engine.patients)[:3]:
+        out = engine.nurse_assess(stay_id, 3)
+        engine.reveal(stay_id, token=out["reveal_token"])
+        engine.finalise(stay_id, clinician="nurse.demo", reason_code="agree")
+    engine._advance_service()
+    treating = len(engine.in_treatment)
+    assert treating > 0
+
+    client.post("/v1/operations/bays/0", headers=charge)
+    assert len(engine.in_treatment) == treating, "a patient was ejected from a bay"

@@ -25,11 +25,29 @@ def test_every_arrival_is_admitted_to_the_queue(played):
     assert len(played.patients) == 30
 
 
+def _triage_everyone(q) -> None:
+    """
+    Stand in for the nurses. A bay only takes a patient who has been signed
+    off, so a test about throughput has to triage before it can measure it.
+    """
+    for stay_id in list(q.patients):
+        if q.patients[stay_id].signed_off:
+            continue
+        try:
+            out = q.nurse_assess(stay_id, q.patients[stay_id].band)
+            q.reveal(stay_id, token=out["reveal_token"])
+            q.finalise(stay_id, clinician="nurse.test",
+                       reason_code="reassessed_at_bedside")
+        except Exception:
+            continue
+
+
 def test_patients_are_seen_and_leave_when_there_is_capacity(scorer):
     """With treatment slots, the queue drains instead of growing without bound."""
     q = QueueEngine(scorer, slots=3)
     for e in build_events(generate(40, seed=21, hours=3.0)):
         q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
+        _triage_everyone(q)
     assert q.seen, "nobody was ever taken through"
     assert len(q.patients) < 40, "the queue never drained"
     kinds = {e.kind for e in q.audit}
@@ -45,6 +63,7 @@ def test_patients_in_treatment_stay_visible_on_the_board(scorer):
     seen_in_treatment = False
     for e in build_events(generate(30, seed=21, hours=3.0)):
         q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
+        _triage_everyone(q)
         if any(r["state"] == "IN TREATMENT" for r in q.snapshot()["rows"]):
             seen_in_treatment = True
             break
@@ -266,3 +285,64 @@ def test_reporting_a_change_clears_the_care_marker():
     assert q.patients[stay].signed_off_at is None
     row = next(r for r in q.snapshot()["rows"] if r["stay_id"] == stay)
     assert row["care_since"] == "" and row["signed_off"] is False
+
+
+def test_a_patient_who_deteriorates_after_sign_off_is_not_stranded():
+    """
+    A patient could get permanently stuck on the board, and it took a stalled
+    demo to notice.
+
+    A Layer 2 escalation cleared the patient's signed_off flag, correctly, but
+    left the workflow at SIGNED. The two then disagreed: nothing could assess
+    them, because the workflow refuses a second cycle without reopen(); and
+    nothing could treat them, because a bay only takes the signed-off. They sat
+    there for the rest of the shift, escalating and unreachable.
+    """
+    from layer3.workflow import Stage
+
+    q = _engine_with_patients(n=10)
+    stay = next(iter(q.patients))
+    out = q.nurse_assess(stay, 3)
+    q.reveal(stay, token=out["reveal_token"])
+    q.finalise(stay, clinician="nurse.demo", reason_code="agree")
+    assert q.workflow.open(stay).stage is Stage.SIGNED
+
+    # deterioration, arriving as a trajectory escalation rather than by hand
+    p = q.patients[stay]
+    p.signed_off = True
+    q.workflow.open(stay).stage = Stage.SIGNED
+    p.band = 3
+    for _ in range(4):
+        p.history.append({"charttime": q.now, "o2sat": 85, "sbp": 84,
+                          "heartrate": 132, "resprate": 30, "temperature": 37.0})
+    q.on_vitals(type("E", (), {"stay_id": stay, "at": q.now,
+                               "payload": {"o2sat": 85, "sbp": 84, "heartrate": 132,
+                                           "resprate": 30, "temperature": 37.0},
+                               "kind": "vitals"})())
+
+    if not p.signed_off:          # the escalation fired
+        assert q.workflow.open(stay).stage is not Stage.SIGNED, \
+            "workflow still signed while the patient is not: they are stranded"
+        # and they can be assessed again, which is the whole point
+        assert q.nurse_assess(stay, 1)["reveal_token"]
+
+
+def test_a_bay_only_takes_a_patient_who_has_been_triaged():
+    """
+    Without this, a free bay pulled whoever was most urgent straight out of the
+    arrivals list. On an empty department the first patients went to treatment
+    having never been assessed, so the board opened with an empty attention
+    queue and a full treatment bay, which is exactly backwards for a triage
+    product.
+    """
+    q = _engine_with_patients(n=10)
+    q.slots = 5
+    q._advance_service()
+    assert not q.in_treatment, "an untriaged patient was taken through"
+
+    stay = next(iter(q.patients))
+    out = q.nurse_assess(stay, 3)
+    q.reveal(stay, token=out["reveal_token"])
+    q.finalise(stay, clinician="nurse.demo", reason_code="agree")
+    q._advance_service()
+    assert stay in q.in_treatment, "a signed-off patient was not taken through"

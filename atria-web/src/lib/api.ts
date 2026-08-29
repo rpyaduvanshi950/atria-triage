@@ -163,6 +163,38 @@ export const api = {
 
   shadow: () => request<ShadowReport>("/v1/shadow"),
 
+  /** Open or close treatment bays. Nobody already being treated is turned out. */
+  setBays: (count: number) =>
+    request<{ slots: number; in_treatment: number; max: number }>(
+      `/v1/operations/bays/${count}`, { method: "POST" }),
+
+  /** Check a patient in by hand, then record whatever vitals were taken. */
+  addPatient: async (p: {
+    stayId: number; age?: number; gender?: string;
+    complaint: string; transport: string;
+    vitals: Record<string, number | undefined>;
+  }) => {
+    const q = new URLSearchParams({
+      stay_id: String(p.stayId),
+      chiefcomplaint: p.complaint || "unspecified",
+      arrival_transport: p.transport,
+    });
+    if (p.age !== undefined) q.set("age", String(p.age));
+    if (p.gender) q.set("gender", p.gender);
+    await request(`/v1/encounters?${q}`, { method: "POST" });
+
+    // Vitals go as a separate observation so they run through the same path as
+    // a reading arriving from a monitor, rather than a second way in.
+    const v = new URLSearchParams();
+    for (const [k, value] of Object.entries(p.vitals)) {
+      if (value !== undefined && !Number.isNaN(value)) v.set(k, String(value));
+    }
+    if ([...v.keys()].length) {
+      await request(`/v1/encounters/${p.stayId}/observations?${v}`,
+                    { method: "POST" });
+    }
+  },
+
   // Browsers cannot set headers on a WebSocket, so the token rides in the query
   // string. Same signed token, checked the same way on the other end.
   wsUrl: () =>
