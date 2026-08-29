@@ -304,7 +304,7 @@ streamlit_app.py   three tabs: Assessment · Operations & Flow · History
 atria-web/     Next.js client — typed, virtualisable, keyboard-first
 eval/          fairness · cross_site · lead_time · latency · figures · report
 scenarios/     seven seeded demo cases + runner
-tests/         156 tests across 13 files
+tests/         199 tests across 14 files
 docs/          pitch pack, business proposal, regulatory position, results, figures
 Makefile       every command
 ```
