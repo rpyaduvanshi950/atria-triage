@@ -33,6 +33,28 @@
   --color-oksoft: #eaf6f0;
   --color-info: #155f91;
 
+  /*
+   * Triage band colours: red, orange, amber, green, blue, in the order any
+   * emergency department already uses. Adopting the convention rather than
+   * inventing one matters more here than palette harmony — a nurse should not
+   * have to learn what our green means.
+   *
+   * Every foreground is dark enough to clear 4.5:1 on its own tint, so the
+   * colour is decoration on top of the number rather than the only thing
+   * carrying it. Nobody should have to see the difference between amber and
+   * green to triage a patient.
+   */
+  --color-esi1: #8f2132;
+  --color-esi1soft: #fdeef0;
+  --color-esi2: #a8481a;
+  --color-esi2soft: #fdf2ea;
+  --color-esi3: #7d6410;
+  --color-esi3soft: #fdf8e6;
+  --color-esi4: #0f6f4a;
+  --color-esi4soft: #eaf6f0;
+  --color-esi5: #2a5d8f;
+  --color-esi5soft: #eef3f9;
+
   --font-sans: Arial, Helvetica, sans-serif;
   --font-mono: ui-monospace, Menlo, "SF Mono", monospace;
 

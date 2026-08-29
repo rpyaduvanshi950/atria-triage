@@ -1,8 +1,16 @@
-# Runtime — what the deployed app needs.
+# Runtime — what a deployed ATRIA needs, and nothing else.
+#
+# fastapi and uvicorn live here rather than in the dev file. They were dev-only
+# for as long as the API only ever ran on a laptop; a hosted engine cannot start
+# without them, and a Dockerfile installing the dev requirements to get them was
+# shipping pytest and matplotlib into production to compensate.
 streamlit>=1.40
+fastapi>=0.110
+uvicorn[standard]>=0.29
 pandas>=2.0
 numpy>=1.26
 scikit-learn>=1.4
+scipy>=1.11
 pyyaml>=6.0
 pyjwt>=2.8
 python-multipart>=0.0.9

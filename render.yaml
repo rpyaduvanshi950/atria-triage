@@ -1,0 +1,53 @@
+# Hosting the ATRIA engine.
+#
+# Render reads this on connect, so the service, its disk and its environment are
+# described here rather than clicked into a dashboard and forgotten. Deploy with
+# Blueprints -> New Blueprint Instance -> this repo.
+#
+# The web board is NOT here. It is a Next.js app and belongs on Vercel; see
+# docs/hosting.md. The Streamlit board goes to Streamlit Community Cloud.
+
+services:
+  - type: web
+    name: atria-engine
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter          # free spins down after ~15 min idle; see docs/hosting.md
+    healthCheckPath: /v1/auth/mode
+
+    # The audit trail has to outlive a deploy. Without this disk the hash chain
+    # is rebuilt empty every time the container restarts, which makes it a log
+    # file with extra steps rather than evidence of anything.
+    disk:
+      name: atria-data
+      mountPath: /data
+      sizeGB: 1
+
+    envVars:
+      - key: ATRIA_DB
+        value: /data/atria_audit.db
+
+      # Generated once by Render and then held. Left unset, the app makes a new
+      # random secret per process, so every deploy and every restart signs
+      # everyone out and the websocket starts rejecting live tokens.
+      - key: ATRIA_SECRET
+        generateValue: true
+
+      # Set this to the Vercel URL after the board is deployed, then redeploy.
+      # It is a list and never a wildcard: this API mutates clinical state and
+      # should not accept a cross-origin write from an origin nobody named.
+      - key: ATRIA_ALLOWED_ORIGINS
+        sync: false
+
+      # Real accounts, as JSON mapping username to {role, display,
+      # password_hash}. Hashes only — a plaintext password in an environment
+      # variable ends up in a process listing and a deploy log.
+      #
+      #   python -c "from service.auth import hash_password; \
+      #              print(hash_password('...'))"
+      #
+      # Leave it unset and the seeded demo accounts are live, with each password
+      # equal to its username. That is fine for synthetic data on a private URL
+      # and unacceptable anywhere else.
+      - key: ATRIA_USERS
+        sync: false

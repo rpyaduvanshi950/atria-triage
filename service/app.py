@@ -497,6 +497,39 @@ async def history(mode: str = "audit", limit: int = 60,
                          "events": rows[-limit:]})
 
 
+#: Two ways of reading the same trail.
+#:
+#: "atria" is what the machine did on its own: what it scored, what it refused
+#: to score, what a safety rule fired on, what a trajectory escalated. "nurse"
+#: is what people did to a priority: the blind choice, the sign-off, an
+#: override, a reported change.
+#:
+#: Splitting them is not cosmetic. The question "what did ATRIA do" and the
+#: question "what did we do about it" have different audiences, and mixing them
+#: is how a reviewer loses the thread.
+LOG_VIEWS = {
+    "atria": {"arrival", "abstain", "escalation", "atria_reveal",
+              "charge_nurse_escalation", "shadow_recommendation"},
+    "nurse": {"nurse_assessment", "sign_off", "override", "worsening_reported",
+              "charge_nurse_acknowledgement", "bays_changed"},
+}
+
+
+@app.get("/v1/logs")
+async def logs(view: str = "atria", limit: int = 120,
+               user: Principal = Depends(requires("history:read"))) -> JSONResponse:
+    """One of the two views above, newest last, with the chain's own verdict."""
+    kinds = LOG_VIEWS.get(view)
+    rows = engine.audit.as_rows(limit=2000)
+    if kinds is not None:
+        rows = [r for r in rows if r["kind"] in kinds]
+    intact, note = engine.audit.verify()
+    return JSONResponse({
+        "view": view, "views": sorted(LOG_VIEWS), "intact": intact, "note": note,
+        "total": len(engine.audit), "events": rows[-limit:],
+    })
+
+
 @app.get("/v1/integrations/health")
 async def integrations_health(
         user: Principal = Depends(requires("queue:read"))) -> JSONResponse:

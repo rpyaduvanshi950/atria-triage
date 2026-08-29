@@ -591,3 +591,56 @@ def test_closing_a_bay_does_not_turn_anybody_out(api):
 
     client.post("/v1/operations/bays/0", headers=charge)
     assert len(engine.in_treatment) == treating, "a patient was ejected from a bay"
+
+
+# --- the two log views -------------------------------------------------------
+
+def test_the_two_log_views_split_the_machine_from_the_people(api):
+    """
+    "What ATRIA did" and "what we did about it" are different questions with
+    different audiences. A single interleaved stream makes both harder to
+    follow, so the split exists — but it must be a filter over one chain, never
+    two records.
+    """
+    import service.app as app_module
+
+    client, engine_module = api
+    client.headers.update(_login(client, "charge.demo"))
+
+    stay = client.get("/v1/queue").json()["rows"][0]["stay_id"]
+    a = client.post(f"/v1/encounters/{stay}/nurse-assessments?esi=3").json()
+    client.post(f"/v1/assessments/{stay}/reveal?reveal_token={a['reveal_token']}")
+    client.post(f"/v1/assessments/{stay}/finalize?reason_code=reassessed_at_bedside")
+
+    atria = client.get("/v1/logs?view=atria").json()
+    nurse = client.get("/v1/logs?view=nurse").json()
+
+    assert {e["kind"] for e in atria["events"]} <= app_module.LOG_VIEWS["atria"]
+    assert {e["kind"] for e in nurse["events"]} <= app_module.LOG_VIEWS["nurse"]
+    assert not (app_module.LOG_VIEWS["atria"] & app_module.LOG_VIEWS["nurse"]), \
+        "an event belongs in one view or the other, not both"
+
+    # a nurse changing a priority must be in the nurse view
+    assert any(e["kind"] == "sign_off" for e in nurse["events"])
+    # and both views report the same chain
+    assert atria["intact"] is nurse["intact"] is True
+    assert atria["total"] == nurse["total"] == len(engine_module.engine.audit)
+
+
+def test_the_logs_are_read_only_and_need_a_role(api):
+    """
+    A nurse can read the trail, including their own decisions. The rules worth
+    enforcing are that an auditor cannot WRITE to it and that ops cannot lower
+    a priority; stopping the person who made an entry from reading it back is a
+    different thing, and not a useful one.
+
+    Flow coordinators are the exception: they get the department view, not the
+    clinical record.
+    """
+    client, _ = api
+    assert client.get("/v1/logs").status_code == 401
+    for who in ("nurse.demo", "charge.demo", "doc.demo", "audit.demo"):
+        assert client.get("/v1/logs",
+                          headers=_login(client, who)).status_code == 200, who
+    assert client.get("/v1/logs",
+                      headers=_login(client, "ops.demo")).status_code == 403

@@ -1,12 +1,6 @@
 -r requirements.txt
-# Local development and the evaluation suite.
+# Local development, the test suite and the evaluation scripts.
 pytest>=7.0
 matplotlib>=3.8
-# Exact binomial and Wilson intervals in eval/uncertainty.py. It arrives anyway
-# as a scikit-learn dependency; named here because relying on that is how a
-# transitive package disappears under you at the worst moment.
-scipy>=1.11
-fastapi>=0.110
-uvicorn[standard]>=0.29
 pyreadr>=0.5
 openpyxl>=3.1

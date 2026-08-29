@@ -18,6 +18,22 @@ export function PatientRecord({ row }: { row: QueueRow }) {
       <h3 className="text-[15px] font-semibold mt-4 mb-2">Observed</h3>
       <Vitals row={row} />
 
+      {(row.rank_because ?? []).length > 0 && (
+        <h3 className="text-[15px] font-semibold mt-4 mb-2">
+          Why they are in this position
+        </h3>
+      )}
+      <ol className="flex flex-col gap-1">
+        {/* Defensive: an older engine will not send this, and a whole blank
+            page because one explanatory field is missing is a bad trade. */}
+        {(row.rank_because ?? []).map((r, i) => (
+          <li key={r} className="text-[14px] text-ink2 flex gap-2 leading-relaxed">
+            <span className="text-ink3 tabular-nums shrink-0">{i + 1}.</span>
+            {r}
+          </li>
+        ))}
+      </ol>
+
       <h3 className="text-[15px] font-semibold mt-4 mb-2">Main concern</h3>
       <p className="text-[15px] text-ink2 leading-relaxed">
         {row.red_flag || row.reasons.join(". ") || "Nothing unusual in the vitals."}

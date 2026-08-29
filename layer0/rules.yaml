@@ -45,7 +45,13 @@ worst_case:
   sbp: 80
   resprate: 34
   heartrate: 130
-  temperature: 35.0
+  # Fahrenheit, like every source in this project: MIMIC and Yale both record
+  # around 98.1, and layers 1 and 2 are written against 98.6 normal. This said
+  # 35.0, a Celsius hypothermia threshold, which on this scale is a temperature
+  # no living patient has. No rule reads temperature today, so nothing fired on
+  # it — but a worst-case value in the wrong unit is a trap left armed for
+  # whoever adds the first temperature rule.
+  temperature: 95.0
 
 rules:
   - id: RF01

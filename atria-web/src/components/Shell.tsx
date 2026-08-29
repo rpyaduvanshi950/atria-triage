@@ -16,6 +16,7 @@ import { useAuth } from "@/lib/auth-context";
 const TABS = [
   ["/", "Patients", "queue:read"],
   ["/operations", "Department", "ops:read"],
+  ["/logs", "Logs", "history:read"],
   ["/history", "Decision history", "history:read"],
 ] as const;
 

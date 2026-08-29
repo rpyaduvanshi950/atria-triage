@@ -346,3 +346,41 @@ def test_a_bay_only_takes_a_patient_who_has_been_triaged():
     q.finalise(stay, clinician="nurse.demo", reason_code="agree")
     q._advance_service()
     assert stay in q.in_treatment, "a signed-off patient was not taken through"
+
+
+def test_the_ranking_explanation_describes_the_sort_that_actually_runs():
+    """
+    The explanation is written against snapshot()'s sort, not against
+    layer2/ranking.py, which the engine does not currently use. An explanation
+    of a ranking that is not the one being performed is worse than none: it
+    reads as authoritative and is wrong.
+    """
+    q = _engine_with_patients(n=12)
+    rows = q.snapshot()["rows"]
+    assert all(r["rank_because"] for r in rows), "every patient needs a reason"
+
+    for r in rows:
+        joined = " ".join(r["rank_because"])
+        assert f"Priority {r['band']}" in joined, "the band must be named"
+        assert "breaks ties" in joined, "the tiebreak must be named"
+
+    # a patient in a bay is explained as being below everyone still waiting
+    q.slots = 3
+    stay = next(iter(q.patients))
+    out = q.nurse_assess(stay, 3)
+    q.reveal(stay, token=out["reveal_token"])
+    q.finalise(stay, clinician="nurse.test", reason_code="agree")
+    q._advance_service()
+    row = next(r for r in q.snapshot()["rows"] if r["stay_id"] == stay)
+    assert "treatment bay" in " ".join(row["rank_because"]).lower()
+
+
+def test_a_red_flag_is_named_as_the_reason_it_is_first():
+    """The loudest thing about a patient should be the first thing explained."""
+    q = _engine_with_patients(n=12)
+    flagged = [p for p in q.patients.values() if p.red_flag]
+    if not flagged:
+        import pytest
+        pytest.skip("no red flag in this fixture")
+    why = flagged[0].rank_because(q.now)
+    assert any(p.red_flag in w for p in flagged[:1] for w in why)

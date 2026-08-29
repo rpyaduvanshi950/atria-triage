@@ -191,7 +191,7 @@ export default function AssessmentPage() {
             Nurse assessment
             {selected && !pinned && (
               <span className="font-normal text-[14px] text-ink3">
-                {" "}\u00b7 top of the list
+                {" · top of the list"}
               </span>
             )}
           </h2>

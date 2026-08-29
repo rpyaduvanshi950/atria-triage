@@ -6,7 +6,7 @@
  * re-derives it: two sources of truth for a threshold is how they diverge.
  */
 import type {
-  AssessmentView, Forecast, History, ShadowReport, Snapshot,
+  AssessmentView, Forecast, History, Logs, ShadowReport, Snapshot,
 } from "@/types/atria";
 
 const BASE =
@@ -154,6 +154,9 @@ export const api = {
 
   forecast: (nurses: number, spaces: number) =>
     request<Forecast>(`/v1/operations/forecast?nurses=${nurses}&spaces=${spaces}`),
+
+  logs: (view: "atria" | "nurse", limit = 120) =>
+    request<Logs>(`/v1/logs?view=${view}&limit=${limit}`),
 
   history: (mode: "audit" | "general", limit = 80) =>
     request<History>(`/v1/history?mode=${mode}&limit=${limit}`),

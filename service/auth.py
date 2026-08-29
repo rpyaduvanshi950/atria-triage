@@ -43,8 +43,14 @@ SECRET = os.environ.get("ATRIA_SECRET") or secrets.token_urlsafe(48)
 PERMISSIONS: dict[str, set[str]] = {
     # intake:write covers checking a patient in and recording their vitals —
     # the two writes that create clinical data rather than judge it.
+    # A nurse can read the trail, including their own decisions. The rule worth
+    # enforcing is that an auditor cannot WRITE to it and that ops cannot lower
+    # a priority; stopping the person who made an entry from reading it back is
+    # a different thing, and not a useful one. It also had a practical cost:
+    # the Logs tab is gated on history:read, so leaving it out hid the feature
+    # from the only account most people sign in as.
     "nurse":        {"queue:read", "assess:write", "worsening:write",
-                     "intake:write"},
+                     "intake:write", "history:read"},
     # Opening and closing bays is the charge nurse's job in a real department,
     # so it is theirs here. A triage nurse can see the count and cannot change
     # it — the board hides the control rather than letting them press a button

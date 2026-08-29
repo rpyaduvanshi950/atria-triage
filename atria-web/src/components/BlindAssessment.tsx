@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { ApiError, api } from "@/lib/api";
-import { ESI_FULL, ESI_SHORT, PRIORITY_NAME, REASON_CHOICES } from "@/types/copy";
+import { ESI_FULL, ESI_SHORT, ESI_TONE, PRIORITY_NAME, REASON_CHOICES } from "@/types/copy";
 import { Vitals } from "@/components/Vitals";
 import type { AssessmentView, Outcome, QueueRow } from "@/types/atria";
 
@@ -204,30 +204,39 @@ export function BlindAssessment({ row, onChanged }: {
           <Vitals row={row} compact />
 
           <div className="grid gap-2 mt-3">
-            {[1, 2, 3, 4, 5].map((esi) => (
-              <button key={esi} disabled={busy || blocked} onClick={() => choose(esi)}
-                      aria-keyshortcuts={String(esi)}
-                      className={clsx(
-                        "min-h-[64px] text-left px-4 py-3 rounded-xl border",
-                        "bg-card shadow-[0_1px_2px_rgba(33,52,58,.06)]",
-                        "hover:border-brand hover:bg-brandsoft",
-                        "disabled:opacity-50 transition-colors",
-                        // The press is acknowledged the instant it happens. The
-                        // answer it produces still comes from the server.
-                        pending === esi
-                          ? "border-brand bg-brandsoft ring-2 ring-brand"
-                          : "border-line",
-                      )}>
-                <div className="flex items-baseline gap-3">
-                  <span className="text-[22px] font-bold w-6">{esi}</span>
-                  <span className="text-[16px] font-semibold">{ESI_SHORT[esi]}</span>
-                  <span className="text-[14px] text-ink3 ml-auto">{PRIORITY_NAME[esi]}</span>
-                </div>
-                <div className="text-[14px] text-ink2 mt-0.5 ml-9">
-                  {ESI_FULL[esi].split(". ").slice(1).join(". ")}
-                </div>
-              </button>
-            ))}
+            {[1, 2, 3, 4, 5].map((esi) => {
+              const tone = ESI_TONE[esi];
+              return (
+                <button key={esi} disabled={busy || blocked} onClick={() => choose(esi)}
+                        aria-keyshortcuts={String(esi)}
+                        className={clsx(
+                          "min-h-[64px] text-left px-4 py-3 rounded-xl border",
+                          "border-l-4", tone.edge,
+                          "bg-card shadow-[0_1px_2px_rgba(33,52,58,.06)]",
+                          "hover:border-brand hover:bg-brandsoft",
+                          "disabled:opacity-50 transition-colors",
+                          // The press is acknowledged the instant it happens. The
+                          // answer it produces still comes from the server.
+                          pending === esi
+                            ? "border-brand bg-brandsoft ring-2 ring-brand"
+                            : "border-line",
+                        )}>
+                  <div className="flex items-baseline gap-3">
+                    <span className={clsx(
+                            "text-[22px] font-bold w-9 h-9 rounded-lg shrink-0",
+                            "grid place-content-center leading-none",
+                            tone.chip, tone.text)}>
+                      {esi}
+                    </span>
+                    <span className="text-[16px] font-semibold">{ESI_SHORT[esi]}</span>
+                    <span className="text-[14px] text-ink3 ml-auto">{PRIORITY_NAME[esi]}</span>
+                  </div>
+                  <div className="text-[14px] text-ink2 mt-0.5 ml-12">
+                    {ESI_FULL[esi].split(". ").slice(1).join(". ")}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </>
       ) : (
@@ -328,7 +337,10 @@ function Card({ label, esi, highlight, fallback }: {
     <div className={clsx("rounded-xl border p-4 text-center",
                          highlight ? "border-brand bg-brandsoft" : "border-line bg-card")}>
       <div className="text-[14px] text-ink2">{label}</div>
-      <div className="text-[36px] font-bold leading-tight">{esi ?? "?"}</div>
+      <div className={clsx("text-[36px] font-bold leading-tight",
+                           esi ? ESI_TONE[esi]?.text : "")}>
+        {esi ?? "?"}
+      </div>
       <div className="text-[14px] text-ink2">{esi ? ESI_SHORT[esi] : fallback ?? ""}</div>
     </div>
   );

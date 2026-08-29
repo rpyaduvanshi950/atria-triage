@@ -99,6 +99,45 @@ class Patient:
     def waited(self, now: pd.Timestamp) -> float:
         return max(0.0, (now - self.arrived).total_seconds() / 60)
 
+    def rank_because(self, now: pd.Timestamp) -> list[str]:
+        """
+        Why this patient sits where they do, in the order the sort applies.
+
+        Written against the sort in `snapshot()` rather than against
+        layer2/ranking.py, which the engine does not currently use. An
+        explanation of a ranking that is not the one being performed is worse
+        than none: it reads as authoritative and is wrong.
+        """
+        why: list[str] = []
+
+        if self.seen_at is not None:
+            why.append("In a treatment bay, so below everyone still waiting")
+        elif self.signed_off:
+            why.append("Signed off and waiting for a bay")
+
+        if self.state == "AWAITING":
+            if self.red_flag:
+                why.append(f"Needs attention first: {self.red_flag}")
+            elif self.abstained:
+                why.append("Needs attention first: ATRIA would not score them")
+            else:
+                why.append("Needs attention before anyone already settled")
+
+        why.append(f"Priority {self.band}"
+                   + (f", raised from {self.band_before}" if self.band_before else ""))
+
+        if self.band_before and self.reasons:
+            why.append(f"Moved up because {self.reasons[0]}")
+        elif self.reasons and not self.red_flag:
+            why.append(str(self.reasons[0]))
+
+        why.append(f"Waited {self.waited(now):.0f} min, which breaks ties "
+                   f"within a priority")
+
+        if self.overdue_by > 0:
+            why.append(f"Re-check overdue by {self.overdue_by:.0f} min")
+        return why
+
     def as_dict(self, now: pd.Timestamp) -> dict:
         return dict(
             stay_id=self.stay_id, ticket=self.ticket,
@@ -119,6 +158,7 @@ class Patient:
             overdue_by=round(self.overdue_by), readings=len(self.history),
             signed_off=self.signed_off,
             care_since=str(self.seen_at or self.signed_off_at or ""),
+            rank_because=self.rank_because(now),
         )
 
 

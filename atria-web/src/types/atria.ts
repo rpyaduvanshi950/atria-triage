@@ -47,6 +47,8 @@ export interface QueueRow {
   care_since: string;
   /** Where the server has this patient in the blind cycle. */
   assessment_stage: "awaiting_nurse" | "compared" | "signed";
+  /** Why this patient sits where they do, in the order the sort applies. */
+  rank_because: string[];
   vitals: Vitals;
 }
 
@@ -194,4 +196,14 @@ export interface ShadowReport {
     reasons: string[];
   }[];
   note?: string;
+}
+
+/** One of the two log views: what ATRIA did, or what people did about it. */
+export interface Logs {
+  view: string;
+  views: string[];
+  intact: boolean;
+  note: string;
+  total: number;
+  events: Record<string, unknown>[];
 }

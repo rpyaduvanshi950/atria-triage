@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { LANE_NAME, PRIORITY_NAME } from "@/types/copy";
+import { ESI_TONE, LANE_NAME, PRIORITY_NAME } from "@/types/copy";
 import type { QueueRow as Row } from "@/types/atria";
 
 /**
@@ -63,12 +63,14 @@ export function QueueRowCard({
                   : "border border-line",
       )}
     >
+      {/* Same five colours as the priority buttons. A band should look the
+          same wherever a nurse meets it, or the colour teaches nothing. */}
       <div className={clsx(
         "shrink-0 w-14 h-14 rounded-xl grid place-content-center text-center",
-        urgent ? "bg-dangersoft" : row.band === 3 ? "bg-warnsoft" : "bg-sunk",
+        ESI_TONE[row.band]?.chip ?? "bg-sunk",
       )}>
         <div className={clsx("text-2xl font-bold leading-none",
-                             urgent ? "text-danger" : "text-ink")}>
+                             ESI_TONE[row.band]?.text ?? "text-ink")}>
           {row.band}
         </div>
         {row.band_before !== null && (

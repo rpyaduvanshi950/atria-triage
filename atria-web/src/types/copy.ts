@@ -81,8 +81,12 @@ export const VITAL_INFO: Record<string, {
                  ok: [94, 100],   bad: [90, 100] },
   resprate:    { label: "Breathing", full: "Breaths per minute", normal: "10-30",   unit: "/min",
                  ok: [10, 30],    bad: [8, 36] },
-  temperature: { label: "Temp",      full: "Temperature",        normal: "36-38.5", unit: "\u00b0C",
-                 ok: [36, 38.5],  bad: [35, 40] },
+  // Fahrenheit, because every source in this project is: MIMIC and Yale both
+  // record around 98.1, and layer1/pathways.py and layer1/interactions.py were
+  // already written against 98.6 normal, 95 hypothermia, 101.5 hyperthermia.
+  // The Celsius range that used to be here painted every single patient red.
+  temperature: { label: "Temp",      full: "Temperature",        normal: "97-99.5", unit: "°F",
+                 ok: [97, 99.5],  bad: [95, 101.5] },
 };
 
 /**
@@ -104,3 +108,18 @@ export function vitalLevel(key: string, value: number): VitalLevel {
   if (value < lo || value > hi) return "abnormal";
   return "normal";
 }
+
+/**
+ * Tailwind classes per triage band.
+ *
+ * Written out in full rather than built by interpolation: Tailwind scans source
+ * text for class names, so `bg-esi${n}soft` produces no CSS at all and the
+ * button silently loses its colour.
+ */
+export const ESI_TONE: Record<number, { chip: string; text: string; edge: string }> = {
+  1: { chip: "bg-esi1soft", text: "text-esi1", edge: "border-l-esi1" },
+  2: { chip: "bg-esi2soft", text: "text-esi2", edge: "border-l-esi2" },
+  3: { chip: "bg-esi3soft", text: "text-esi3", edge: "border-l-esi3" },
+  4: { chip: "bg-esi4soft", text: "text-esi4", edge: "border-l-esi4" },
+  5: { chip: "bg-esi5soft", text: "text-esi5", edge: "border-l-esi5" },
+};

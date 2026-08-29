@@ -221,3 +221,24 @@ def test_refusing_to_score_is_an_escalation_not_a_shrug():
 
     g = gate({"o2sat": 97, "temperature": 37.0, "age": 40})
     assert g.hard_stop and g.priority == 2
+
+
+def test_every_threshold_is_in_the_unit_the_data_arrives_in():
+    """
+    The worst-case temperature was 35.0, a Celsius hypothermia threshold, in a
+    project where every source records Fahrenheit: MIMIC and Yale both sit
+    around 98.1, and layers 1 and 2 are written against 98.6 normal.
+
+    No rule reads temperature today, so nothing fired on it. That is exactly
+    what made it worth fixing rather than shrugging at — a worst-case value in
+    the wrong unit is a trap left armed for whoever writes the first
+    temperature rule.
+    """
+    from layer0.engine import RuleTable
+
+    worst = RuleTable().worst_case
+    assert 90 <= worst["temperature"] <= 100, \
+        f"temperature worst case {worst['temperature']} is not on the Fahrenheit scale"
+    # and the rest of the imputations should still look like human physiology
+    assert 60 <= worst["o2sat"] <= 95
+    assert 50 <= worst["sbp"] <= 100
