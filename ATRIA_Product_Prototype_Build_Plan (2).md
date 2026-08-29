@@ -2,8 +2,7 @@
 
 Companion to `README.md` (product summary) and `ATRIA_Data_to_Product_Plan.md`
 (dataset mapping). This document is the engineering execution plan: what to
-build, in what order, with what stack, so the static `ATRIA_Intuitive_Flow_
-Deterioration_UI.html` becomes a real, testable, API-backed system that
+build, in what order, with what stack, so the static `ATRIA_Intuitive_Flow_ Deterioration_UI.html` becomes a real, testable, API-backed system that
 satisfies the PRD's "Definition of done" (§21.1).
 
 **Definition of "product-level prototype" for this project:**
@@ -17,7 +16,7 @@ regulatory clearance or real-patient readiness.
 
 ## 1. Target architecture
 
-This diagram now carries all **nine** service boundaries from PRD §16.1 —
+This diagram now carries all **nine** service boundaries from **B**PRD §16.1 —
 the previous version folded three of them away; see the note at the end of
 this section.
 
@@ -64,16 +63,16 @@ without touching the others.
 
 ## 2. Stack recommendation (prototype-appropriate, not final)
 
-| Layer | Choice | Why |
-|---|---|---|
-| Backend language/framework | **Python (FastAPI)** or **Node (NestJS)** | Both have first-class async, OpenAPI generation for free, and match the PRD's JSON-contract-first approach. Pick Python if the ML team owns Layer 1 in the same repo (avoids a cross-language model-serving hop). |
-| Database | **PostgreSQL** | Relational integrity for append-only audit + immutable snapshots; JSONB columns for flexible reason-code/rationale payloads. |
-| Live updates | **Redis pub/sub → SSE** | Simplest path to the PRD's full §16.3 event set — `queue.updated`, `assessment.recommendation_ready`, `patient.reassessment_due`, `patient.worsening_reported`, `patient.guardrail_triggered`, `operations.snapshot_updated`, `audit.override_created` — without standing up a message broker yet. Every event carries a monotonically increasing stream version and must be safely re-derivable from a GET of the latest snapshot after a client disconnect (§16.3). |
-| ML serving | **FastAPI microservice wrapping a scikit-learn/XGBoost model**, versioned artifacts in a local model registry (even just a `models/` dir with a manifest) | Matches PRD §14 model-agnostic contract; swappable later. See §2a below for what this actually means. |
-| Frontend | Keep the existing HTML/CSS/JS shell; introduce a thin `api.js` fetch layer | Preserves the interaction design the PRD explicitly protects (§5) while removing embedded state. Migrate to a framework only if the team already prefers one — not required for the prototype. |
-| Auth | Simple JWT/session auth with role claims (nurse, charge nurse, clinician, ops, admin, auditor) | Matches SEC-002/003; doesn't need to be enterprise SSO yet. |
-| Testing | **pytest** (backend, incl. Layer 0 boundary tests), **Playwright** (frontend E2E against the acceptance scenarios) | Both support the deterministic fixture-replay approach PRD §19 asks for. |
-| Infra | Docker Compose locally (`api`, `db`, `redis`, `ml-service`, `web`) | Matches "definition of done": a developer can run it locally with seed data, no production credentials. |
+| Layer                      | Choice                                                                                                                                                            | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backend language/framework | **Python (FastAPI)** or **Node (NestJS)**                                                                                                             | Both have first-class async, OpenAPI generation for free, and match the PRD's JSON-contract-first approach. Pick Python if the ML team owns Layer 1 in the same repo (avoids a cross-language model-serving hop).                                                                                                                                                                                                                                                                      |
+| Database                   | **PostgreSQL**                                                                                                                                              | Relational integrity for append-only audit + immutable snapshots; JSONB columns for flexible reason-code/rationale payloads.                                                                                                                                                                                                                                                                                                                                                           |
+| Live updates               | **Redis pub/sub → SSE**                                                                                                                                    | Simplest path to the PRD's full §16.3 event set —`queue.updated`, `assessment.recommendation_ready`, `patient.reassessment_due`, `patient.worsening_reported`, `patient.guardrail_triggered`, `operations.snapshot_updated`, `audit.override_created` — without standing up a message broker yet. Every event carries a monotonically increasing stream version and must be safely re-derivable from a GET of the latest snapshot after a client disconnect (§16.3). |
+| ML serving                 | **FastAPI microservice wrapping a scikit-learn/XGBoost model**, versioned artifacts in a local model registry (even just a `models/` dir with a manifest) | Matches PRD §14 model-agnostic contract; swappable later. See §2a below for what this actually means.                                                                                                                                                                                                                                                                                                                                                                                |
+| Frontend                   | Keep the existing HTML/CSS/JS shell; introduce a thin`api.js` fetch layer                                                                                       | Preserves the interaction design the PRD explicitly protects (§5) while removing embedded state. Migrate to a framework only if the team already prefers one — not required for the prototype.                                                                                                                                                                                                                                                                                       |
+| Auth                       | Simple JWT/session auth with role claims (nurse, charge nurse, clinician, ops, admin, auditor)                                                                    | Matches SEC-002/003; doesn't need to be enterprise SSO yet.                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Testing                    | **pytest** (backend, incl. Layer 0 boundary tests), **Playwright** (frontend E2E against the acceptance scenarios)                                    | Both support the deterministic fixture-replay approach PRD §19 asks for.                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Infra                      | Docker Compose locally (`api`, `db`, `redis`, `ml-service`, `web`)                                                                                      | Matches "definition of done": a developer can run it locally with seed data, no production credentials.                                                                                                                                                                                                                                                                                                                                                                                |
 
 ---
 
@@ -100,8 +99,7 @@ input/prediction drift monitored independently — easiest when it's a
 distinct, traceable hop in the request path with its own logs and its own
 `model_version` tag on every response.
 
-In the local dev setup this is just one more container: `docker compose up
-inference-service` — no different in kind from the guardrail service, just
+In the local dev setup this is just one more container: `docker compose up inference-service` — no different in kind from the guardrail service, just
 with a model file mounted in instead of a rules YAML.
 
 ---
@@ -111,7 +109,7 @@ with a model file mounted in instead of a rules YAML.
 All nine PRD §16.1 service boundaries now map one-to-one onto a folder:
 
 | PRD §16.1 service | Repo folder |
-|---|---|
+| ----------------------- | -------------------------------- |
 | Clinical data gateway | `apps/clinical-data-gateway/` |
 | Guardrail service | `apps/guardrail-service/` |
 | Inference service | `apps/inference-service/` |
@@ -165,52 +163,64 @@ PRD's "learned model must never suppress Layer 0" invariant.
 ## 4. Build phases (maps to PRD §22 delivery plan)
 
 ### Phase 0 — Contract freeze (before any code)
+
 - [ ] Finalize JSON schemas for `ClinicalSnapshot`, `AtriaAssessment`, `NurseAssessment`, `QueueEntry`, `ReassessmentTask`, `OverrideEvent`, audit event (PRD §15, Appendix C).
 - [ ] Version and check in `guardrail-ruleset.yaml` (SpO₂, SBP-by-age, RR bounds, GCS, etc. — Appendix A values as v0.1.0, pending clinical sign-off).
 - [ ] Freeze the recommendation response payload shape (PRD §10.2) as an OpenAPI schema.
 - [ ] Get a named clinical reviewer (even informal, for the prototype) to sign off on ESI nomenclature and reassessment intervals before Phase 1 starts.
 
 ### Phase 1 — Deterministic core
+
 - [ ] Implement Layer 0 as pure functions: `evaluate_guardrails(snapshot) -> {critical|uncertain|continue, reason_codes[]}`.
 - [ ] Implement the missing-essential-vital abstention rule as its own explicit branch (never a fallthrough).
 - [ ] Age-aware vital interpretation (pediatric SBP formula, HR/RR bands from §9.2).
 - [ ] Unit tests for every boundary in SAF-001–008 (89.9/90.0 SpO₂, ages 3/14/15/75, RR 9/10/30/31).
 - [ ] Validate against Yale + MIMIC vitals as a real-data sanity fixture (see dataset plan §3 — don't train yet, just confirm the rule fires where `esi==1` rows suggest it should).
+
 - **Exit criterion:** 100% of Layer 0 unit tests pass; guardrail service runs standalone with zero external dependencies.
 
 ### Phase 2 — Queue, record and workflow
+
 - [ ] `POST /v1/encounters`, `/observations`, `/nurse-assessments`, `/reveal`, `/finalize`, `/override`, `/worsening` (PRD §16.2).
 - [ ] Server-side enforcement of blind reveal: the recommendation must not exist in any API response reachable before the nurse's ESI is submitted (ASS-002 acceptance = automated DOM/response test finds nothing).
 - [ ] Safety-band sorting (Critical > Diagnostic Uncertainty > ESI 2–5) with within-band modifiers (§11.2) and the invariant test that modifiers can never cross a band boundary (QUE-005).
 - [ ] Reassessment scheduler: due-time computation, `recheck_due` flag, "Report change" clearing prior sign-off, **and configurable-grace-period escalation to the charge nurse with an audited acknowledgement event for overdue rechecks (REA-008)** — this was missing from the original scope and is a distinct requirement from the due-time/flag logic above.
 - [ ] Rewire `apps/web` to call these APIs instead of using embedded patient objects; keep every existing visual/interaction state (nurse-first, compared-match, compared-escalation, etc.) but drive it from real API responses.
+
 - **Exit criterion:** full synthetic workflow (check-in → vitals → blind ESI → reveal → sign-off → queue reorder) passes end-to-end against the running services, not mocks.
 
 ### Phase 3 — Model baseline
+
 - [ ] Feature pipeline from Yale slim CSV per the column mapping in `ATRIA_Data_to_Product_Plan.md` §3. **Exclude race, ethnicity, language, and insurance from the trained feature set** — PRD §14.3 prohibits protected attributes as model inputs absent an approved clinical rationale and fairness review, and §14.2 explicitly calls out race/ethnicity as a disallowed predictive shortcut. Also exclude current bed availability, nurse count, flow state, and any post-triage/outcome fields (§14.3).
 - [ ] Train an interpretable baseline (gradient-boosted trees or ordinal model), site-holdout by `dep_name`, asymmetric-loss for undertriage.
 - [ ] Calibration + abstention wiring (ML-001–006): out-of-distribution check, low-confidence threshold (start at 0.70, configurable).
 - [ ] Reason-code templating: model outputs map to a fixed vocabulary, never free text (§14.5).
 - [ ] Evaluation report against PRD §20.2 matrix: ESI-1/2 recall, undertriage rate, calibration (reliability curve + ECE), subgroup parity computed **post hoc, from held-out labels only** using Yale's age-band/sex/language/site fields (§20.2's named fairness groups) — race/ethnicity/insurance may be added to this eval-only slice if the fairness reviewer approves it, but never feed back into training.
+
 - **Exit criterion:** frozen model artifact + evaluation report; release gates from §20.3 checked off (even if thresholds are provisional pending clinical review).
 
 **Failure-mode note carried over from Phase 1/3 (PRD §19.1):** guardrail-service and inference-service outages are *not* symmetric and the orchestrator must treat them differently —
+
 - **Guardrail service down → fail closed.** The orchestrator must refuse to produce any ATRIA recommendation and surface "safety service unavailable"; it must not fall through to the model or a default ESI. This should be enforced in Phase 1/2 as an explicit orchestrator branch, not left implicit.
 - **Inference service down → fail open on the model only.** Layer 0 still runs and can still force ESI 1/abstention; ATRIA shows "Recommendation unavailable" and the nurse proceeds with an audited manual sign-off. The model being unreachable must never block triage.
-This distinction should be captured as its own test (`test_guardrail_service_down` in addition to the existing `test_model_unavailable`) since the two failure paths currently collapse into one test name in §5 below.
+  This distinction should be captured as its own test (`test_guardrail_service_down` in addition to the existing `test_model_unavailable`) since the two failure paths currently collapse into one test name in §5 below.
 
 ### Phase 4 — Operations & Flow
+
 - [ ] Operational snapshot aggregation (waiting, inside, nurses, staffed spaces, arrival rate).
 - [ ] 5-point forecast (now, +15/30/45/60m), capped treatment line, uncapped waiting line (§13).
 - [ ] Bounded operational modifier wired into the queue service, with the invariant test proving it can't cross an ESI band (OPS-007).
 - [ ] Degraded-mode behavior for each integration (records/beds/roster/vitals disconnection) per §17.
+
 - **Exit criterion:** forecast is reproducible from a stored input snapshot and explainable in one sentence (OPS-005).
 
 ### Phase 5 — Shadow validation
+
 - [ ] Stand up one real or sandbox integration (FHIR sandbox or a synthetic device feed) end-to-end through the clinical data gateway.
 - [ ] Run the system in shadow mode: real or replayed nurse decisions flow through, ATRIA's recommendation is logged but never acted on.
 - [ ] Full observability: distributed trace from ingestion → guardrail → model → queue, PHI-safe logging.
 - [ ] Usability pass on an 11" tablet against the human-factors requirements (§5.3, §5.2).
+
 - **Exit criterion:** go/no-go review package assembled — this is the gate before anything touches a real patient, and that decision sits with clinical governance, not engineering.
 
 ---

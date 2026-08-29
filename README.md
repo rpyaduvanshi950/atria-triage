@@ -11,6 +11,89 @@ Team **Digital Ninja** — Pushpender, Shagun, Atit · IIT Kanpur.
 
 ---
 
+## For the pitch — everything on one screen
+
+**The problem.** Triage is a one-time judgement recorded on a patient who keeps
+changing. Across 5.3M encounters, ESI was wrong 32.2% of the time and caught only
+65.9% of patients who went on to need a life-saving intervention. Delay converts
+that error into death: one extra death per 82 patients held 6–8 hours.
+
+**The question we build for.** Not *"who is sickest now?"* but **"who is becoming
+sickest while nobody is looking?"**
+
+**The answer.** A queue that re-ranks itself continuously from vitals already
+being recorded — that can escalate on its own, and can never de-escalate on its
+own.
+
+### The five things that make it different
+
+| | Why it matters |
+|---|---|
+| **The nurse decides first** | ATRIA's recommendation is *absent from the payload* until the nurse commits — enforced by the server with a one-time token, not hidden by CSS. Kills automation bias, and produces an independent human label to measure against |
+| **It refuses to answer** | Under 3 vitals: no score at all. Two pathways equally engaged: says it cannot classify. Both route to a human and go ahead of everyone already cleared |
+| **Two confidences, not one** | *How urgent* and *what is wrong* are different questions. A hypothermic trauma patient scores urgency HIGH, cause LOW — certain they are critical, honest we cannot say which organ is failing |
+| **Safety bands are absolute** | Waiting time and department load reorder patients *within* a priority, never across one. A maximally boosted priority 3 still sits below an untouched priority 2, and a test proves it |
+| **Every decision is reconstructable** | Hash-chained append-only log. Edit or delete anything and the chain breaks |
+
+### Three findings we did not expect
+
+**A dataset that encoded its own answer.** In 143,140 real Iranian records, 100%
+of the most-urgent patients had *zero* recorded vitals against 0.1% of the
+mid-urgency band — the sickest bypass the triage form. A model using
+missing-indicators would have scored beautifully by learning hospital paperwork.
+Excluded from training.
+
+**Our model read missing vitals as reassuring.** Blanking heart rate, respiratory
+rate or systolic *lowered* predicted risk — a silent undertriage path in a system
+that promises the opposite. Found by auditing, not assuming. Now clamped.
+
+**Our own gate was adult-calibrated.** It fired hypotension on a 3-year-old with
+a systolic of 88, which is normal at that age — the exact failure the brief
+names. Now age-banded on PALS.
+
+### The numbers
+
+| | |
+|---|---|
+| Layer 1 | **AUC 0.809** on 560,486 real Yale encounters |
+| Published benchmark | 0.87 — *using the nurse's ESI and race, which we exclude* |
+| Price of independence | 0.859 with the nurse's ESI, 0.809 without |
+| Operating point | 95.0% sensitivity · 34.1% specificity · 5.0% undertriage |
+| Layer 2 on real patients | **32.2%** of later-admitted flagged vs **12.2%** discharged, median **164 min** lead |
+| Cross-site | Train on two hospitals, test on the third: within **±0.026** AUC |
+| Fairness | "Other" undertriaged 9.2% vs 4.0% White → gap closed to **5.0%** |
+| Latency | **p95 52 ms** under 3× surge, against a 400 ms budget |
+| Scale | ~7,650 lines of Python · 18 endpoints · **199 tests** |
+
+### The one number to be honest about
+
+We score **below** the published benchmark on purpose. It reads the nurse's own
+ESI and uses race as a predictor; we refuse both. That costs ~0.05 AUC and buys a
+recommendation that can genuinely disagree with a nurse. A model already told the
+answer cannot contradict it, and the blind comparison built on it would be
+theatre.
+
+### What it deliberately will not do
+
+No diagnosis · no treatment advice · no autonomous downgrade · no silent failure.
+It changes **the order of attention**, nothing else. That boundary is what keeps
+it in the lower SaMD tier and what makes it deployable.
+
+### Demo script — four moments
+
+1. **A quiet patient climbs.** Someone at priority 3 drifts; twenty minutes later
+   they carry an arrow and nobody had re-checked them.
+2. **A blank field, handled honestly.** No reassuring default, no false alarm —
+   priority 2 and an instruction to measure.
+3. **You disagree with it.** Go *less* urgent and it blocks you until you say why.
+4. **Kill the model.** Layer 0 keeps gating, offline, and the board says so.
+
+`make scenarios` plays seven fixed cases with identical output every run — narrate
+the video against that, not the live board.
+
+
+---
+
 ## Quick start
 
 ```bash
@@ -237,7 +320,7 @@ Makefile       every command
 | `make web` | the Next.js client on :3000 (run `make demo` alongside) |
 | `make demo` | the FastAPI build on :8000 |
 | `make scenarios` | seven deterministic demo cases |
-| `make test` | 156 tests |
+| `make test` | 199 tests |
 | `make report` | regenerate `docs/results.md` and all figures |
 | `make eval` | latency, cross-site, Layer 2 lead time |
 | `make fairness` | subgroup audit and mitigation |
@@ -270,6 +353,7 @@ pitch. The scorer trains once per container behind `@st.cache_resource`.
 
 | Document | Contents |
 |---|---|
+| [`EXPLANATION.md`](EXPLANATION.md) | Build-plan status audit — written by a different tool, **not verified line by line by me**; its test count is stale |
 | [`docs/how-it-works.md`](docs/how-it-works.md) | What the board is doing, every rule, and what the testing found |
 | [`docs/pitch.md`](docs/pitch.md) | Slide content and Q&A, built from the measured results |
 | [`docs/results.md`](docs/results.md) | Every measured number, regenerated by `make report` |
