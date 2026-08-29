@@ -44,6 +44,33 @@ def _seeded_engine(n: int = 12, seed: int = 5, slots: int = 0) -> QueueEngine:
 
 # --- 1. test_pediatric_control ------------------------------------------------
 
+def _isolated_api(seed: int = 5, n: int = 10):
+    """
+    A TestClient over a *fresh* engine.
+
+    service.app.engine is a module global, so tests that drive it over HTTP
+    leak workflow state into each other — one test signs a patient off and the
+    next finds them already past the stage it wanted to exercise. This gives
+    each test its own engine and stubs the background replay, which would
+    otherwise clear the queue on a timer.
+    """
+    from fastapi.testclient import TestClient
+    import service.app as app_module
+    from service.queue import QueueEngine
+
+    async def _no_replay(*_a, **_kw):
+        return None
+
+    original_replay = app_module._replay
+    original_engine = app_module.engine
+    app_module._replay = _no_replay
+    app_module.engine = QueueEngine(AcuityScorer().fit(generate(600, seed=3)), slots=0)
+    for e in build_events(generate(n, seed=seed)):
+        app_module.engine.on_arrival(e) if e.kind == "arrival" else app_module.engine.on_vitals(e)
+
+    return TestClient(app_module.app), app_module, original_replay, original_engine
+
+
 def test_pediatric_control():
     """A 4-year-old's RR 32 and SBP 88 are normal — should NOT fire RF13 or RF03."""
     patient = _fixture("pediatric_control")
@@ -370,21 +397,9 @@ def test_reveal_token_is_required_and_single_use():
     stored, so the ordering is a server invariant rather than something the
     client happens to get right. A stale token from an earlier cycle is refused.
     """
-    from fastapi.testclient import TestClient
-    import service.app as app_module
-
-    async def _no_replay(*_a, **_kw):
-        return None
-
-    original, app_module._replay = app_module._replay, _no_replay
+    client, app_module, original_replay, original_engine = _isolated_api()
     try:
-        with TestClient(app_module.app) as client:
-            engine = app_module.engine
-            engine.scorer = engine.scorer or AcuityScorer().fit(generate(600, seed=3))
-            engine.slots = 0
-            for e in build_events(generate(10, seed=5)):
-                engine.on_arrival(e) if e.kind == "arrival" else engine.on_vitals(e)
-
+        with client:
             rows = client.get("/v1/queue").json()["rows"]
             sid = [r for r in rows if r["state"] != "IN TREATMENT"][0]["stay_id"]
 
@@ -405,7 +420,8 @@ def test_reveal_token_is_required_and_single_use():
             stale = client.post(f"/v1/assessments/{sid}/reveal?reveal_token={token}")
             assert stale.status_code == 409
     finally:
-        app_module._replay = original
+        app_module._replay = original_replay
+        app_module.engine = original_engine
 
 
 # --- CORS: a port collision must not look like a broken API ------------------
@@ -586,20 +602,9 @@ def test_the_note_is_cleared_when_a_cycle_reopens():
 
 
 def test_the_api_refuses_other_without_a_note():
-    from fastapi.testclient import TestClient
-    import service.app as app_module
-
-    async def _no_replay(*_a, **_kw):
-        return None
-
-    original, app_module._replay = app_module._replay, _no_replay
+    client, app_module, original_replay, original_engine = _isolated_api()
     try:
-        with TestClient(app_module.app) as client:
-            engine = app_module.engine
-            engine.scorer = engine.scorer or AcuityScorer().fit(generate(600, seed=3))
-            engine.slots = 0
-            for e in build_events(generate(10, seed=5)):
-                engine.on_arrival(e) if e.kind == "arrival" else engine.on_vitals(e)
+        with client:
             sid = client.get("/v1/queue").json()["rows"][0]["stay_id"]
 
             token = client.post(
@@ -615,4 +620,5 @@ def test_the_api_refuses_other_without_a_note():
                 f"&reason_note=Patient%20is%20at%20baseline")
             assert ok.status_code == 200
     finally:
-        app_module._replay = original
+        app_module._replay = original_replay
+        app_module.engine = original_engine

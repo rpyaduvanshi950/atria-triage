@@ -360,18 +360,20 @@ def test_the_api_never_sends_a_recommendation_before_the_nurse_commits():
     async def _no_replay(*_a, **_kw):
         return None
 
-    original = app_module._replay
+    from service.queue import QueueEngine
+    original_replay, original_engine = app_module._replay, app_module.engine
     app_module._replay = _no_replay
+    # a fresh engine: the module global is shared, and another test's signed
+    # assessment would put this patient past the stage being exercised
+    app_module.engine = QueueEngine(AcuityScorer().fit(generate(600, seed=3)), slots=0)
+    for e in build_events(generate(10, seed=5)):
+        app_module.engine.on_arrival(e) if e.kind == "arrival" else app_module.engine.on_vitals(e)
     try:
         with TestClient(app_module.app) as client:
-            engine = app_module.engine
-            engine.scorer = engine.scorer or AcuityScorer().fit(generate(600, seed=3))
-            engine.slots = 0
-            for e in build_events(generate(10, seed=5)):
-                engine.on_arrival(e) if e.kind == "arrival" else engine.on_vitals(e)
-            _assert_blind_over_http(client, engine)
+            _assert_blind_over_http(client, app_module.engine)
     finally:
-        app_module._replay = original
+        app_module._replay = original_replay
+        app_module.engine = original_engine
 
 
 def _assert_blind_over_http(client, engine) -> None:
