@@ -50,6 +50,7 @@ from layer2.ratchet import Source, apply
 from layer3.audit import AuditLog
 from layer3.workflow import BlindAssessmentError, Outcome, Stage, Workflow
 from layer2.trajectory import REASSESS_MINUTES, assess
+from service import shadow as shadow_mode
 
 
 @dataclass
@@ -85,6 +86,9 @@ class Patient:
     held_for_assessment: bool = False
     abstain_reason: str = ""
     diagnostic_confidence: str = "HIGH"
+    #: what ATRIA would have set the band to. Equal to `band` in normal running;
+    #: in shadow mode it is the recommendation nobody acted on.
+    shadow_band: int | None = None
     pathway: str | None = None
     conflicts: tuple[str, ...] = ()
 
@@ -121,7 +125,15 @@ class QueueEngine:
         #: department throughput.
         self.slots = slots
         self.scorer = scorer
-        self.audit = audit or AuditLog()
+        #: Stamped on every sign-off. An override recorded six months ago is only
+        #: reviewable if the exact model that recommended against it can be named.
+        self.model_version = getattr(scorer, "model_version", None) or "untracked"
+        #: Shadow mode: every layer runs, nothing acts. See service/shadow.py.
+        self.shadow = shadow_mode.ENABLED_BY_DEFAULT
+        # `audit or AuditLog()` would be wrong: AuditLog defines __len__, so an
+        # empty one is falsy and a caller's durable log would be silently
+        # swapped for a fresh in-memory one that writes nothing to disk.
+        self.audit = AuditLog() if audit is None else audit
         self.workflow = Workflow()
         self.patients: dict[int, Patient] = {}
         self.now: pd.Timestamp | None = None
@@ -215,6 +227,19 @@ class QueueEngine:
 
         patient.vitals = {k: v for k, v in vitals.items() if k in
                           ("heartrate", "sbp", "o2sat", "resprate", "temperature")}
+        patient.shadow_band = band
+        if self.shadow:
+            # Recorded, not acted on. The board shows what the department would
+            # have done without ATRIA, so a disagreement is measurable rather
+            # than hypothetical.
+            band = shadow_mode.baseline_band(patient.red_flag)
+            self.audit.append(
+                "shadow_recommendation", patient.stay_id, self.now,
+                acted_band=band, shadow_band=patient.shadow_band,
+                reasons=list(patient.reasons), confidence=patient.confidence,
+                red_flag=patient.red_flag, model_version=self.model_version,
+                source="layer0_layer1",
+            )
         patient.band = band
         if patient.red_flag or band == 1 or patient.abstained:
             patient.state = "AWAITING"
@@ -273,6 +298,19 @@ class QueueEngine:
                        f"overdue {t.overdue_by:.0f}m — charge nurse alerted")
 
         change = None
+        if t.escalates and self.shadow:
+            proposed = apply(patient.band, t.proposed_band, Source.TRAJECTORY)
+            if proposed < patient.band:
+                self.audit.append(
+                    "shadow_recommendation", patient.stay_id, self.now,
+                    acted_band=patient.band, shadow_band=proposed,
+                    reasons=list(t.reasons), shock_index=t.shock_index,
+                    readings=t.readings, model_version=self.model_version,
+                    source="layer2_trend",
+                )
+            self.latencies.append((time.perf_counter() - t0) * 1000)
+            return None
+
         if t.escalates:
             new = apply(patient.band, t.proposed_band, Source.TRAJECTORY)
             if new < patient.band:
@@ -423,7 +461,8 @@ class QueueEngine:
                           nurse_esi=a.nurse_esi, atria_esi=a.atria_esi,
                           outcome=a.outcome.value if a.outcome else None,
                           reason_code=reason_code, reason_note=a.reason_note,
-                          clinician=clinician, cycle=a.cycle)
+                          clinician=clinician, cycle=a.cycle,
+                          model_version=self.model_version)
         return a.visible_to_nurse()
 
     def report_change(self, stay_id: int, *, reporter: str = "nurse.demo") -> dict:

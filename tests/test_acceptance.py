@@ -68,7 +68,19 @@ def _isolated_api(seed: int = 5, n: int = 10):
     for e in build_events(generate(n, seed=seed)):
         app_module.engine.on_arrival(e) if e.kind == "arrival" else app_module.engine.on_vitals(e)
 
-    return TestClient(app_module.app), app_module, original_replay, original_engine
+    client = TestClient(app_module.app)
+    # Sign in as an administrator so these tests exercise the clinical flow
+    # *through* the auth layer rather than around it. Role enforcement itself is
+    # tested separately, in test_auth.py.
+    client.headers.update(_bearer(client, "admin.demo"))
+    return client, app_module, original_replay, original_engine
+
+
+def _bearer(client, username: str) -> dict[str, str]:
+    r = client.post("/v1/auth/token",
+                    data={"username": username, "password": username})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
 
 
 def test_pediatric_control():

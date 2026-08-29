@@ -167,3 +167,27 @@ export const VITAL_REF: Record<string, { label: string; range: string; unit: str
   resprate: { label: "RR", range: "10–30", unit: "/min" },
   temperature: { label: "Temp", range: "36–38.5", unit: "°C" },
 };
+
+/**
+ * Shadow mode's report: what ATRIA would have done, while doing nothing.
+ * `escalations_for_review` is the list a department actually chart-reviews —
+ * the rate on its own does not tell anyone whether ATRIA was right to disagree.
+ */
+export interface ShadowReport {
+  enabled: boolean;
+  baseline_band: number;
+  n: number;
+  agreement_rate?: number;
+  would_have_escalated?: number;
+  would_have_escalated_rate?: number;
+  would_have_lowered?: number;
+  band_delta_histogram?: Record<string, number>;
+  escalations_for_review?: {
+    stay_id: number;
+    at: string;
+    from: number;
+    to: number;
+    reasons: string[];
+  }[];
+  note?: string;
+}

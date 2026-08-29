@@ -103,8 +103,10 @@ make setup          # one-off: creates .venv, installs dependencies
 make streamlit      # the board at http://localhost:8501
 ```
 
-Give it about ten seconds — the acuity scorer trains on startup, so the board
-reads *"waiting for the first arrival…"* until it finishes. That is not a hang.
+The board loads the frozen model in `ml/models/`, so it is up in a second or
+two. If that artifact is missing it trains on startup instead and the board
+reads *"waiting for the first arrival…"* for about ten seconds — not a hang.
+`make freeze` pins a fresh one.
 
 Three other entry points:
 
@@ -118,6 +120,12 @@ make scenarios      # seven deterministic demo cases, printed
 the FastAPI build pushes over a websocket, the Streamlit build redraws inside an
 auto-refreshing fragment. `make scenarios` is what you narrate a video against,
 because it produces identical output every run.
+
+**Signing in.** The FastAPI build and the Next.js client require an account —
+every assessment and override is recorded against the person who made it. Six
+demo accounts are listed on the sign-in screen; each password is the username.
+Pick *Triage nurse* to see the board as a nurse does, or *Administrator* for
+everything. `ATRIA_AUTH=off make demo` disables it for a projector demo.
 
 `make help` lists everything.
 
@@ -320,12 +328,30 @@ Makefile       every command
 | `make web` | the Next.js client on :3000 (run `make demo` alongside) |
 | `make demo` | the FastAPI build on :8000 |
 | `make scenarios` | seven deterministic demo cases |
-| `make test` | 199 tests |
+| `make test` | 221 tests |
+| `make freeze` | train once and pin the model artifact and manifest |
+| `make shadow` | run in shadow mode: every layer runs, nothing acts |
 | `make report` | regenerate `docs/results.md` and all figures |
 | `make eval` | latency, cross-site, Layer 2 lead time |
 | `make fairness` | subgroup audit and mitigation |
 | `make status` | which data sources are loadable |
 | `make extract-yale` | one-off Yale extraction (needs R) |
+
+---
+
+## Running it like a deployment
+
+Four things separate the demo from something a department could pilot, and all
+four are built. [`docs/deployment.md`](docs/deployment.md) covers each in full.
+
+| | | |
+|---|---|---|
+| **The audit trail survives a restart** | SQLite, chain rebuilt from disk, `UPDATE`/`DELETE` refused by the database itself | `ATRIA_DB=…` |
+| **Everyone signs in** | JWT bearer tokens, PBKDF2 passwords, six roles. The auditor cannot write; ops cannot lower a priority | on by default |
+| **The model is frozen** | A pinned artifact plus a manifest naming the training data, features, operating point and metrics. Stamped on every sign-off | `make freeze` |
+| **Shadow mode** | Every layer runs, nothing moves the board, disagreements go to the trail. Phase 1 of the roadmap | `make shadow` |
+
+Plus a read-only FHIR R4 client, verified against the public HAPI sandbox.
 
 ---
 
@@ -359,6 +385,7 @@ pitch. The scorer trains once per container behind `@st.cache_resource`.
 | [`docs/business-proposal.md`](docs/business-proposal.md) | Problem framing, users, roadmap, risks |
 | [`docs/regulatory.md`](docs/regulatory.md) | Jurisdiction, SaMD class, liability, consent, bias |
 | [`docs/deck-changes.md`](docs/deck-changes.md) | What to fix in the pitch deck |
+| [`docs/deployment.md`](docs/deployment.md) | Persistence, accounts and roles, the frozen model, shadow mode, FHIR |
 | [`docs/nextjs-migration.md`](docs/nextjs-migration.md) | The migration plan; phases 1–4 are built, phase 5 is not |
 | [`atria-web/README.md`](atria-web/README.md) | The Next.js client and the two rules for working on it |
 | [`dashboard/NOTES.md`](dashboard/NOTES.md) | Nurse board design decisions |

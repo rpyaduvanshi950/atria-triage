@@ -168,6 +168,16 @@ The blind cycle above, plus a hash-chained audit log. Each entry embeds the hash
 of the one before it, so an edit or deletion anywhere breaks the chain and is
 detectable. Corrections create a new linked event; nothing is ever rewritten.
 
+The trail is durable. It is written to SQLite as it is appended and rebuilt from
+disk on startup, so the chain a restart inherits is the chain an auditor would
+read off the file — and the database refuses `UPDATE` and `DELETE` outright, so
+tampering fails at the point of writing rather than being caught later by a
+check nobody ran.
+
+Every entry names a person who authenticated, not a query parameter the caller
+chose for themselves, and every sign-off carries the version of the model that
+recommended against them.
+
 **No machine source can lower a priority.** Layer 0 escalates, Layer 1
 escalates, Layer 2 escalates — none of them can relent. Only a clinician can, and
 it is recorded with their identity, their reason code, the model version and the
@@ -207,7 +217,19 @@ is why this survived. Both are now covered.
 | Layer 2 on real patients | Flags **32.2%** of those later admitted against **12.2%** discharged home, median **164 minutes** of lead time |
 | Fairness | "Other" undertriaged at 9.2% against 4.0% for White; calibration closes the gap to 5.0% |
 | Soak test | 25 shifts, 434 patients treated, 565 full nurse workflows, **0 problems** |
-| Test suite | **193 passing** |
+| Test suite | **221 passing** |
+
+---
+
+## Before it could run anywhere real
+
+Four things, all built, all described in [deployment.md](deployment.md): a
+durable audit trail, accounts and roles, a frozen model artifact with a
+manifest, and **shadow mode** — every layer runs and nothing acts, so a
+department can measure how often ATRIA would have disagreed before it is
+allowed to. A Layer 0 red flag is the one thing shadow mode still acts on;
+withholding it would mean not acting on a measured SpO2 of 84% to keep an
+experiment clean.
 
 ---
 

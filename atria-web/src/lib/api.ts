@@ -6,7 +6,7 @@
  * re-derives it: two sources of truth for a threshold is how they diverge.
  */
 import type {
-  AssessmentView, Forecast, History, Snapshot,
+  AssessmentView, Forecast, History, ShadowReport, Snapshot,
 } from "@/types/atria";
 
 const BASE =
@@ -18,11 +18,64 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The bearer token, held in memory and mirrored to sessionStorage.
+ *
+ * sessionStorage rather than localStorage: a token on a shared triage
+ * workstation should not outlive the tab the nurse closes when they walk away.
+ * It is not the only defence — the token expires server-side — but it is the
+ * one that matters when someone else sits down at the same machine.
+ */
+const TOKEN_KEY = "atria.token";
+let token: string | null = null;
+
+export const session = {
+  get token(): string | null {
+    if (token !== null) return token;
+    try {
+      token = sessionStorage.getItem(TOKEN_KEY);
+    } catch {
+      /* private mode, or no storage at all — memory alone is fine */
+    }
+    return token;
+  },
+  set(value: string | null) {
+    token = value;
+    try {
+      if (value) sessionStorage.setItem(TOKEN_KEY, value);
+      else sessionStorage.removeItem(TOKEN_KEY);
+    } catch {
+      /* nothing to do; the in-memory copy still works for this tab */
+    }
+  },
+};
+
+export interface User {
+  username: string;
+  role: string;
+  display: string;
+  permissions: string[];
+  auth_enabled?: boolean;
+  demo_accounts?: boolean;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const bearer = session.token;
   const res = await fetch(`${BASE}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+      ...(init?.headers ?? {}),
+    },
   });
+  if (res.status === 401) {
+    // The session is gone, not merely this request. Clearing it here means the
+    // whole app falls back to the sign-in screen instead of every panel
+    // rendering its own copy of the same error.
+    session.set(null);
+    throw new ApiError(401, "session expired — sign in again");
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -37,6 +90,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  /** Exchange credentials for a bearer token. Form-encoded, per OAuth2. */
+  signIn: async (username: string, password: string) => {
+    const res = await fetch(`${BASE}/v1/auth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ username, password }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, body.error ?? "incorrect username or password");
+    }
+    const data = (await res.json()) as { access_token: string; user: User };
+    session.set(data.access_token);
+    return data.user;
+  },
+
+  signOut: () => session.set(null),
+
+  /** Who we are signed in as, and what that role is allowed to do. */
+  me: () => request<User>("/v1/auth/me"),
+
   queue: () => request<Snapshot>("/v1/queue"),
 
   /** Blind ESI. The response deliberately carries no recommendation. */
@@ -78,5 +152,11 @@ export const api = {
   degraded: (on: boolean) =>
     request<{ degraded: boolean }>(`/api/degraded/${on ? 1 : 0}`, { method: "POST" }),
 
-  wsUrl: () => `${BASE.replace(/^http/, "ws")}/ws`,
+  shadow: () => request<ShadowReport>("/v1/shadow"),
+
+  // Browsers cannot set headers on a WebSocket, so the token rides in the query
+  // string. Same signed token, checked the same way on the other end.
+  wsUrl: () =>
+    `${BASE.replace(/^http/, "ws")}/ws` +
+    (session.token ? `?token=${encodeURIComponent(session.token)}` : ""),
 };

@@ -13,6 +13,16 @@ data/yale/ALL_COLUMNS.txt
 # redistribution — this line exists before the directory does, on purpose.
 data/mimic_full/
 
+# The audit trail. Durable on the machine that produced it, never in git: it is
+# a clinical record, and a shared one would let two deployments disagree about
+# what happened. The schema is in layer3/store.py; the file rebuilds itself.
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# The frozen model artifact IS tracked — ml/models/acuity.pkl and its manifest.
+# A deployment that retrains at startup is not running a model anyone reviewed.
+
 # --- Python -----------------------------------------------------------------
 __pycache__/
 *.pyc

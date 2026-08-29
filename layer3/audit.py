@@ -17,6 +17,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
 
+from layer3.store import AuditStore
+
 GENESIS = "0" * 64
 
 
@@ -37,13 +39,29 @@ class Entry:
 
 
 class AuditLog:
-    """In-memory by default; pass `path` to also append JSON lines to disk."""
+    """
+    The chain, optionally backed by durable storage.
 
-    def __init__(self, path: Path | str | None = None):
+    Without a store this is in-memory and dies with the process, which is fine
+    for a test. With one, entries are written to SQLite as they are appended and
+    reloaded on startup — so the chain a restart inherits is the chain an auditor
+    would read off the disk.
+    """
+
+    def __init__(self, path: Path | str | None = None, store: "AuditStore | None" = None):
         self.entries: list[Entry] = []
         self.path = Path(path) if path else None
         if self.path:
             self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.store = store
+        if store is not None:
+            # Rebuild from disk so a restart continues the same chain rather
+            # than silently starting a new one that verifies fine and proves
+            # nothing about what came before it.
+            self.entries = [Entry(seq=r["seq"], at=r["at"], kind=r["kind"],
+                                  stay_id=r["stay_id"], prev_hash=r["prev_hash"],
+                                  payload=r["payload"], hash=r["hash"])
+                            for r in store.all()]
 
     # --- writing -----------------------------------------------------------
 
@@ -53,6 +71,8 @@ class AuditLog:
                       stay_id=int(stay_id), prev_hash=prev, payload=payload)
         entry = Entry(**{**asdict(draft), "hash": draft.digest()})
         self.entries.append(entry)
+        if self.store is not None:
+            self.store.append(asdict(entry))
         if self.path:
             with self.path.open("a") as fh:
                 fh.write(json.dumps(asdict(entry), default=str) + "\n")

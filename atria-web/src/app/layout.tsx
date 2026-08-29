@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import "./globals.css";
-import { QueueProvider } from "@/lib/queue-context";
-import { StatusBar } from "@/components/StatusBar";
+import { AuthProvider } from "@/lib/auth-context";
+import { AuthGate } from "@/components/AuthGate";
+import { Shell } from "@/components/Shell";
 
 export const metadata: Metadata = {
   title: "ATRIA · live triage board",
@@ -10,12 +10,6 @@ export const metadata: Metadata = {
     "Emergency-department triage that reorders attention continuously. " +
     "It supports the nurse; it never prescribes, and never lowers a priority on its own.",
 };
-
-const TABS = [
-  ["/", "Patients"],
-  ["/operations", "Department"],
-  ["/history", "Decision history"],
-] as const;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -33,29 +27,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
      */
     <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen" suppressHydrationWarning>
-        <QueueProvider>
-          {/* INT-008: simulation data must never be mistaken for a live read. */}
+        <AuthProvider>
+          {/* INT-008: simulation data must never be mistaken for a live read.
+              Outside the gate on purpose — it is true of the sign-in page too. */}
           <div className="bg-warn text-white text-center text-[14px] font-semibold py-1.5">
             SIMULATION — synthetic patients. Not a live department.
           </div>
-          <header className="border-b border-line bg-card">
-            <div className="max-w-[1600px] mx-auto px-6 py-3 flex items-center gap-6 flex-wrap">
-              <span className="text-[20px] font-bold">ATRIA</span>
-              <span className="text-[14px] text-ink3">Emergency triage board</span>
-              <nav className="flex gap-1 ml-2">
-                {TABS.map(([href, label]) => (
-                  <Link key={href} href={href}
-                        className="px-4 py-2 rounded-xl text-[15px] text-ink2
-                                   hover:bg-sunk hover:text-ink transition-colors">
-                    {label}
-                  </Link>
-                ))}
-              </nav>
-              <StatusBar />
-            </div>
-          </header>
-          <main className="max-w-[1600px] mx-auto px-6 py-5">{children}</main>
-        </QueueProvider>
+          <AuthGate>
+            <Shell>{children}</Shell>
+          </AuthGate>
+        </AuthProvider>
       </body>
     </html>
   );

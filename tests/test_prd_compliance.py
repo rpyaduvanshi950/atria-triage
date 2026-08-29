@@ -370,6 +370,9 @@ def test_the_api_never_sends_a_recommendation_before_the_nurse_commits():
         app_module.engine.on_arrival(e) if e.kind == "arrival" else app_module.engine.on_vitals(e)
     try:
         with TestClient(app_module.app) as client:
+            r = client.post("/v1/auth/token",
+                            data={"username": "admin.demo", "password": "admin.demo"})
+            client.headers["Authorization"] = f"Bearer {r.json()['access_token']}"
             _assert_blind_over_http(client, app_module.engine)
     finally:
         app_module._replay = original_replay

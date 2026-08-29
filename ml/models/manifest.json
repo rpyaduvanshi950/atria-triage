@@ -1,0 +1,79 @@
+{
+  "artifact_version": "1",
+  "model_version": "acuity-2026-08-29-1",
+  "trained_on": "Yale ED, 560,486 real encounters (Hong et al. 2018)",
+  "training_data": {
+    "yale_triage_slim.csv": "b83a88e5f8b1b19a"
+  },
+  "features": [
+    "temperature",
+    "heartrate",
+    "resprate",
+    "o2sat",
+    "sbp",
+    "dbp",
+    "age",
+    "temperature_missing",
+    "heartrate_missing",
+    "resprate_missing",
+    "o2sat_missing",
+    "sbp_missing",
+    "dbp_missing",
+    "n_vitals_missing",
+    "shock_index",
+    "pulse_pressure",
+    "is_geriatric",
+    "arrived_by_ambulance",
+    "arrival_mode",
+    "gender",
+    "dep_name",
+    "lang",
+    "arrivalhour_bin"
+  ],
+  "n_features": 23,
+  "features_dropped": [
+    "pain",
+    "is_paediatric"
+  ],
+  "unsafe_missing_clamped": [],
+  "operating_point": {
+    "sensitivity_target": 0.95,
+    "threshold": 0.1077173615071775,
+    "band_cuts": [
+      0.7800250981799297,
+      0.6971843473672573,
+      0.3355835856616987,
+      0.12560436840047878
+    ]
+  },
+  "conformal_alpha": 0.05,
+  "metrics": {
+    "n_train": 274638,
+    "n_cal": 117702,
+    "n_test": 168146,
+    "conformal_coverage": {
+      "class_0": 0.95,
+      "class_1": 0.9502
+    },
+    "features_dropped": [
+      "pain",
+      "is_paediatric"
+    ],
+    "n_features": 23,
+    "prevalence": 0.2973,
+    "auc": 0.8085,
+    "threshold": 0.1077,
+    "sensitivity": 0.95,
+    "specificity": 0.3411,
+    "undertriage_rate": 0.05,
+    "band_cuts": [
+      0.78,
+      0.6972,
+      0.3356,
+      0.1256
+    ],
+    "unsafe_missing_fields": []
+  },
+  "sha256": "75ade400c283ef1e2b2130d6234a4abe5b4a479e278578fcd28547af6685aa7b",
+  "size_bytes": 720411
+}

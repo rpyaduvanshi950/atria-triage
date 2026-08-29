@@ -10,15 +10,23 @@ import json
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 from data.loaders.synthetic import generate
 from layer1.model import AcuityScorer
+from ml import artifact
 from service.clock import ReplayClock, build_events
 from service import forecast as flow
+from service import auth
+from service import fhir_client
+from service import shadow as shadow_mode
+from service.auth import Principal, requires
 from service.queue import QueueEngine
+from layer3.audit import AuditLog
+from layer3.store import AuditStore
 from layer3.workflow import BlindAssessmentError
 
 DASHBOARD = Path("dashboard/index.html")
@@ -46,7 +54,11 @@ app.add_middleware(
     CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True,
     allow_methods=["GET", "POST"], allow_headers=["*"],
 )
-engine = QueueEngine()
+#: ATRIA_DB points the audit trail at a SQLite file that outlives the process.
+#: Unset means in-memory, which is right for a test and wrong for a deployment,
+#: so the startup banner says which one is in force.
+_DB = os.environ.get("ATRIA_DB", "")
+engine = QueueEngine(audit=AuditLog(store=AuditStore(_DB)) if _DB else None)
 clients: set[WebSocket] = set()
 
 
@@ -55,7 +67,13 @@ async def startup() -> None:
     # Printed because a rejected preflight surfaces as a bare 400 with no
     # explanation, and the cause is almost always an origin nobody listed.
     print(f"ATRIA: accepting browser requests from {', '.join(ALLOWED_ORIGINS)}")
-    engine.scorer = AcuityScorer().fit(generate(1500, seed=3))
+    print(auth.startup_notice())
+    print(f"ATRIA: audit trail -> {_DB}" if _DB else
+          "ATRIA: audit trail in memory only — set ATRIA_DB to keep it")
+    if engine.shadow:
+        print("ATRIA: SHADOW MODE — every layer runs, nothing acts on the board")
+    engine.scorer = artifact.load_or_train(
+        lambda: AcuityScorer().fit(generate(1500, seed=3)))
     asyncio.create_task(_replay())
 
 
@@ -97,13 +115,36 @@ async def guide() -> FileResponse:
     return FileResponse(GUIDE)
 
 
+# --- authentication ---------------------------------------------------------
+
+@app.post("/v1/auth/token")
+async def token(form: OAuth2PasswordRequestForm = Depends()) -> JSONResponse:
+    """Exchange credentials for a bearer token."""
+    principal = auth.authenticate(form.username, form.password)
+    if principal is None:
+        # One message for both failure modes: distinguishing them tells an
+        # attacker which usernames exist.
+        return JSONResponse({"error": "incorrect username or password"},
+                            status_code=401,
+                            headers={"WWW-Authenticate": "Bearer"})
+    return JSONResponse(auth.issue_token(principal))
+
+
+@app.get("/v1/auth/me")
+async def me(user: Principal = Depends(auth.current_user)) -> JSONResponse:
+    """Who the browser is signed in as, and what that role may do."""
+    return JSONResponse({**user.as_dict(), "auth_enabled": auth.AUTH_ENABLED,
+                         "demo_accounts": auth.DEMO_MODE})
+
+
 @app.get("/api/snapshot")
-async def snapshot() -> JSONResponse:
+async def snapshot(user: Principal = Depends(requires("queue:read"))) -> JSONResponse:
     return JSONResponse(json.loads(json.dumps(engine.snapshot(), default=str)))
 
 
 @app.post("/api/degraded/{on}")
-async def degraded(on: int) -> dict:
+async def degraded(on: int,
+                   user: Principal = Depends(requires("admin:write"))) -> dict:
     """Scenario 06: kill the model, prove Layer 0 keeps gating."""
     engine.degraded = bool(on)
     await _broadcast()
@@ -111,17 +152,22 @@ async def degraded(on: int) -> dict:
 
 
 @app.post("/api/override/{stay_id}/{band}")
-async def override(stay_id: int, band: int, reason_code: str = "clinical_judgement") -> dict:
+async def override(stay_id: int, band: int,
+                   reason_code: str = "clinical_judgement",
+                   user: Principal = Depends(requires("override:write"))) -> dict:
     """band 0 means accept the recommendation as-is and sign off."""
     if band == 0:
         band = engine.patients[stay_id].band
-    entry = engine.override(stay_id, band, reason_code, clinician="nurse.demo")
+    # Identity comes from the token, never from the request body. An audit
+    # entry a caller can name themselves in is not evidence.
+    entry = engine.override(stay_id, band, reason_code, clinician=user.username)
     await _broadcast()
     return entry
 
 
 @app.get("/api/audit")
-async def audit(limit: int = 60) -> JSONResponse:
+async def audit(limit: int = 60,
+                user: Principal = Depends(requires("history:read"))) -> JSONResponse:
     intact, note = engine.audit.verify()
     return JSONResponse({
         "intact": intact, "note": note, "entries": len(engine.audit),
@@ -179,15 +225,16 @@ async def submit_observation(stay_id: int,
 # --- REA-008: charge-nurse acknowledgement -----------------------------------
 
 @app.post("/v1/charge-nurse/{stay_id}/acknowledge")
-async def charge_nurse_ack(stay_id: int,
-                           clinician: str = "charge.nurse.demo") -> JSONResponse:
+async def charge_nurse_ack(
+        stay_id: int,
+        user: Principal = Depends(requires("acknowledge:write"))) -> JSONResponse:
     """The charge nurse acknowledges an overdue reassessment alert (REA-008)."""
     p = engine.patients.get(stay_id)
     if p is None:
         return JSONResponse({"error": "patient not found"}, status_code=404)
     engine.audit.append(
         "charge_nurse_acknowledgement", stay_id, engine.now,
-        clinician=clinician, band=p.band,
+        clinician=user.username, band=p.band,
         overdue_by=round(p.overdue_by),
     )
     # Clear the escalation flag so it doesn't re-fire
@@ -195,14 +242,16 @@ async def charge_nurse_ack(stay_id: int,
         p._charge_escalated = False
     await _broadcast()
     return JSONResponse({"status": "acknowledged", "stay_id": stay_id,
-                         "clinician": clinician})
+                         "clinician": user.username})
 
 
 
 # --- blind nurse-first assessment (PRD 16.2) --------------------------------
 
 @app.post("/v1/encounters/{stay_id}/nurse-assessments")
-async def nurse_assessment(stay_id: int, esi: int) -> JSONResponse:
+async def nurse_assessment(
+        stay_id: int, esi: int,
+        user: Principal = Depends(requires("assess:write"))) -> JSONResponse:
     """Store the nurse's blind ESI. Returns no recommendation."""
     try:
         return JSONResponse(engine.nurse_assess(stay_id, esi))
@@ -211,7 +260,8 @@ async def nurse_assessment(stay_id: int, esi: int) -> JSONResponse:
 
 
 @app.post("/v1/assessments/{stay_id}/reveal")
-async def reveal(stay_id: int, reveal_token: str = "") -> JSONResponse:
+async def reveal(stay_id: int, reveal_token: str = "",
+                 user: Principal = Depends(requires("assess:write"))) -> JSONResponse:
     """
     Reveal ATRIA. Refuses if the nurse has not committed.
 
@@ -227,10 +277,11 @@ async def reveal(stay_id: int, reveal_token: str = "") -> JSONResponse:
 
 
 @app.post("/v1/assessments/{stay_id}/finalize")
-async def finalize(stay_id: int, reason_code: str = "", reason_note: str = "",
-                   clinician: str = "nurse.demo") -> JSONResponse:
+async def finalize(
+        stay_id: int, reason_code: str = "", reason_note: str = "",
+        user: Principal = Depends(requires("assess:write"))) -> JSONResponse:
     try:
-        payload = engine.finalise(stay_id, clinician=clinician,
+        payload = engine.finalise(stay_id, clinician=user.username,
                                   reason_code=reason_code, reason_note=reason_note)
     except BlindAssessmentError as exc:
         return JSONResponse({"error": str(exc)}, status_code=422)
@@ -239,21 +290,50 @@ async def finalize(stay_id: int, reason_code: str = "", reason_note: str = "",
 
 
 @app.post("/v1/encounters/{stay_id}/worsening")
-async def worsening(stay_id: int, reporter: str = "nurse.demo") -> JSONResponse:
+async def worsening(
+        stay_id: int,
+        user: Principal = Depends(requires("worsening:write"))) -> JSONResponse:
     """Report a change. Clears sign-off and forces a fresh blind cycle."""
-    payload = engine.report_change(stay_id, reporter=reporter)
+    payload = engine.report_change(stay_id, reporter=user.username)
     await _broadcast()
     return JSONResponse(payload)
 
 
+# --- shadow mode ------------------------------------------------------------
+
+@app.get("/v1/shadow")
+async def shadow_report(
+        user: Principal = Depends(requires("history:read"))) -> JSONResponse:
+    """How often ATRIA would have disagreed, while changing nothing."""
+    return JSONResponse({
+        "enabled": engine.shadow,
+        "baseline_band": shadow_mode.SHADOW_BASELINE,
+        **shadow_mode.compare(engine.audit.as_rows(limit=5000)),
+    })
+
+
+@app.post("/v1/shadow/{on}")
+async def set_shadow(on: int,
+                     user: Principal = Depends(requires("admin:write"))) -> dict:
+    """
+    Switch shadow mode. Audited, because going live is a clinical decision.
+    """
+    engine.shadow = bool(on)
+    engine.audit.append("shadow_mode_changed", 0, engine.now,
+                        enabled=engine.shadow, clinician=user.username)
+    await _broadcast()
+    return {"shadow": engine.shadow}
+
+
 @app.get("/v1/queue")
-async def queue() -> JSONResponse:
+async def queue(user: Principal = Depends(requires("queue:read"))) -> JSONResponse:
     return JSONResponse(json.loads(json.dumps(engine.snapshot(), default=str)))
 
 
 @app.get("/v1/operations/forecast")
-async def operations_forecast(nurses: int = 6, spaces: int = 20,
-                              arrivals: float = 13.0) -> JSONResponse:
+async def operations_forecast(
+        nurses: int = 6, spaces: int = 20, arrivals: float = 13.0,
+        user: Principal = Depends(requires("ops:read"))) -> JSONResponse:
     snap = engine.snapshot()
     out = flow.project(flow.FlowInputs(
         waiting=snap["waiting"], inside=snap["in_treatment"], nurses=nurses,
@@ -262,7 +342,8 @@ async def operations_forecast(nurses: int = 6, spaces: int = 20,
 
 
 @app.get("/v1/history")
-async def history(mode: str = "audit", limit: int = 60) -> JSONResponse:
+async def history(mode: str = "audit", limit: int = 60,
+                  user: Principal = Depends(requires("history:read"))) -> JSONResponse:
     decision_kinds = {"nurse_assessment", "atria_reveal", "sign_off",
                       "override", "worsening_reported", "abstain"}
     rows = engine.audit.as_rows(limit=500)
@@ -274,19 +355,48 @@ async def history(mode: str = "audit", limit: int = 60) -> JSONResponse:
 
 
 @app.get("/v1/integrations/health")
-async def integrations_health() -> JSONResponse:
+async def integrations_health(
+        user: Principal = Depends(requires("queue:read"))) -> JSONResponse:
     """Freshness and failure state per integration (PRD INT-001)."""
     return JSONResponse({
         "records": {"connected": True, "last_success": str(engine.now)},
         "vitals": {"connected": not engine.degraded, "last_success": str(engine.now)},
         "beds": {"connected": True, "last_success": str(engine.now)},
         "roster": {"connected": True, "last_success": str(engine.now)},
-        "model": {"connected": not engine.degraded},
+        "model": {"connected": not engine.degraded,
+                  "version": engine.model_version},
+        "fhir": fhir_client.health(),
     })
 
 
+@app.get("/v1/integrations/fhir/{patient_id}")
+async def fhir_vitals(patient_id: str,
+                      user: Principal = Depends(requires("queue:read"))) -> JSONResponse:
+    """Pull a patient's vitals from the configured FHIR server. Read-only."""
+    try:
+        return JSONResponse({"patient": fhir_client.patient(patient_id),
+                             **fhir_client.vitals_for(patient_id)})
+    except fhir_client.FHIRUnavailable as exc:
+        # 503, not 500: the integration is down, ATRIA is not.
+        return JSONResponse({"error": str(exc), "connected": False},
+                            status_code=503)
+
+
 @app.websocket("/ws")
-async def ws(websocket: WebSocket) -> None:
+async def ws(websocket: WebSocket, token: str = "") -> None:
+    """
+    The live board.
+
+    Browsers cannot set headers on a WebSocket, so the bearer token arrives as a
+    query parameter. It is the same signed token, checked the same way — the
+    stream carries the whole queue and is not more public than /v1/queue.
+    """
+    if auth.AUTH_ENABLED:
+        try:
+            await auth.current_user(token or None)
+        except Exception:
+            await websocket.close(code=4401)   # unauthorised
+            return
     await websocket.accept()
     clients.add(websocket)
     try:

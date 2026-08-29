@@ -16,7 +16,8 @@ st.set_page_config(page_title="ATRIA · live triage board",
                    initial_sidebar_state="expanded")
 
 from data.loaders.synthetic import generate, surge_missing_rate   # noqa: E402
-from layer1.model import AcuityScorer                             # noqa: E402
+from layer1.model import AcuityScorer
+from ml import artifact                             # noqa: E402
 from service import decision_window, forecast                      # noqa: E402
 from service.clock import build_events                            # noqa: E402
 from layer3.workflow import BlindAssessmentError, Stage
@@ -146,7 +147,8 @@ CSS = """
 @st.cache_resource(show_spinner="Training the acuity scorer…")
 def load_scorer() -> AcuityScorer:
     """Trained once per container. 1500 patients keeps this inside 1 GB of RAM."""
-    return AcuityScorer().fit(generate(1500, seed=3))
+    return artifact.load_or_train(
+        lambda: AcuityScorer().fit(generate(1500, seed=3)))
 
 
 def new_shift(surge: float) -> None:

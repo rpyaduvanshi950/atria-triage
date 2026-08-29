@@ -1,4 +1,4 @@
-.PHONY: help setup test test-all status demo streamlit scenarios eval fairness figures report extract-yale clean
+.PHONY: help setup test test-all status demo streamlit scenarios eval fairness figures report extract-yale freeze shadow clean
 
 help:
 	@echo "ATRIA — Accenture Innovation Challenge 2026, Track 2"
@@ -16,6 +16,8 @@ help:
 	@echo "  make figures       export the deck figures"
 	@echo "  make report        regenerate docs/results.md from live measurements"
 	@echo "  make extract-yale  extract the Yale slim CSV (needs R)"
+	@echo "  make freeze        train once and pin the model artifact + manifest"
+	@echo "  make shadow        start the board in shadow mode (nothing acts)"
 
 setup:
 	python3 -m venv .venv
@@ -29,7 +31,16 @@ test-all:
 	.venv/bin/python -m pytest tests/
 
 demo:
-	.venv/bin/uvicorn service.app:app --host 127.0.0.1 --port 8000
+	ATRIA_DB=data/atria_audit.db \
+	  .venv/bin/uvicorn service.app:app --host 127.0.0.1 --port 8000
+
+# Phase 1 of the deployment roadmap: every layer runs, nothing moves the board.
+shadow:
+	ATRIA_SHADOW=1 ATRIA_DB=data/atria_shadow.db \
+	  .venv/bin/uvicorn service.app:app --host 127.0.0.1 --port 8000
+
+freeze:
+	.venv/bin/python -m ml.freeze
 
 streamlit:
 	.venv/bin/streamlit run streamlit_app.py
