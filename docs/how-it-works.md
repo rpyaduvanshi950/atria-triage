@@ -217,7 +217,7 @@ is why this survived. Both are now covered.
 | Layer 2 on real patients | Flags **32.2%** of those later admitted against **12.2%** discharged home — a **+20.0 point** difference, 95% CI [+4.6, +31.2]. Median **164 minutes** of lead time, CI [111, 258] |
 | Fairness | Worst-served group undertriaged at 9.2% against 4.0%; subgroup-conditional calibration takes the gap to **2.1%** out of sample, 95% CI [0.4, 4.3] — inside the 5-point tolerance |
 | Soak test | 25 shifts, 434 patients treated, 565 full nurse workflows, **0 problems** |
-| Test suite | **236 passing** |
+| Test suite | **241 passing** |
 
 ---
 
