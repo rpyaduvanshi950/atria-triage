@@ -48,6 +48,11 @@ export function BlindAssessment({ row, onChanged }: {
   const noteRequired = reason === "other";
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  /* Set when the server says this patient cannot be assessed at all — they have
+     left the board, or a previous cycle is still open. Retrying cannot fix
+     either, so the buttons stop rather than firing the same refused call again
+     every time a key repeats. */
+  const [blocked, setBlocked] = useState(false);
   /* The ESI the nurse just pressed, shown immediately while the request is in
      flight. Optimistic about the *acknowledgement*, never about the outcome:
      the comparison and the sign-off state come from the server, because those
@@ -55,7 +60,8 @@ export function BlindAssessment({ row, onChanged }: {
   const [pending, setPending] = useState<number | null>(null);
 
   useEffect(() => {
-    setView(null); setToken(""); setProblem(null); setNote(""); setPending(null);
+    setView(null); setToken(""); setProblem(null); setNote("");
+    setPending(null); setBlocked(false);
   }, [row.stay_id]);
 
   const stage = view?.stage ?? "awaiting_nurse";
@@ -75,6 +81,10 @@ export function BlindAssessment({ row, onChanged }: {
     const onEsi = (e: Event) => {
       const esi = (e as CustomEvent<number>).detail;
       if (busy || view?.revealed || stage !== "awaiting_nurse") return;
+      // A key held down repeats. Without this the same ESI is posted five or
+      // six times before the first response lands, and the server refuses each
+      // one — which is what filled the log with 409s.
+      if (blocked) return;
       choose(esi);
     };
     const onConfirm = () => {
@@ -93,9 +103,20 @@ export function BlindAssessment({ row, onChanged }: {
   const run = async (fn: () => Promise<AssessmentView>) => {
     if (busy) return;
     setBusy(true); setProblem(null);
-    try { setView(await fn()); onChanged(); }
-    catch (e) { setProblem(e instanceof ApiError ? e.message : "Something went wrong."); }
-    finally { setBusy(false); }
+    try {
+      setView(await fn());
+      onChanged();
+    } catch (e) {
+      if (e instanceof ApiError) {
+        setProblem(e.message);
+        // 409 means the server will refuse this again for the same reason.
+        // Anything else may be transient and is worth another press.
+        if (e.status === 409) setBlocked(true);
+      } else {
+        setProblem("Something went wrong.");
+      }
+      onChanged();   // pull a fresh board; the patient may simply have moved
+    } finally { setBusy(false); }
   };
 
   /* One implementation, two ways in — the button and Enter. A second copy of
@@ -148,9 +169,22 @@ export function BlindAssessment({ row, onChanged }: {
             </p>
           </div>
 
+          {blocked && (
+            <div role="alert"
+                 className="rounded-xl border border-warn bg-warnsoft px-4 py-3 mb-3">
+              <b className="text-warn text-[15px]">
+                This patient cannot be assessed right now.
+              </b>
+              <p className="text-[14px] text-ink2 mt-1 leading-relaxed">
+                {problem ?? "The board has moved on."} Pick another patient from
+                the queue — trying again here will not help.
+              </p>
+            </div>
+          )}
+
           <div className="grid gap-2">
             {[1, 2, 3, 4, 5].map((esi) => (
-              <button key={esi} disabled={busy} onClick={() => choose(esi)}
+              <button key={esi} disabled={busy || blocked} onClick={() => choose(esi)}
                       aria-keyshortcuts={String(esi)}
                       className={clsx(
                         "min-h-[64px] text-left px-4 py-3 rounded-xl border",

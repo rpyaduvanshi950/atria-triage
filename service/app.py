@@ -80,8 +80,8 @@ async def startup() -> None:
 async def _replay(speed: float = 240.0, surge: float = 1.0) -> None:
     """Replay a synthetic shift on loop so the board is never empty."""
     while True:
-        engine.patients.clear()
-        engine.events_log.clear()
+        # One call, so a new piece of per-shift state cannot be forgotten here.
+        engine.reset_shift()
         ds = generate(40, seed=int(asyncio.get_event_loop().time()) % 1000, hours=3.0)
         clock = ReplayClock(build_events(ds, surge=surge), speed=speed)
         async for event in clock.stream():

@@ -145,6 +145,27 @@ class QueueEngine:
         self.ticker: list[dict] = []
         self._next_ticket = 1
 
+    def reset_shift(self) -> None:
+        """
+        Clear everything that belongs to one shift.
+
+        The demo replay used to clear `patients` and `events_log` by hand and
+        leave the other four alone. Stay ids repeat every shift, so a brand new
+        patient inherited the previous one's completed assessment and every
+        attempt to triage them was refused as "already assessed" — permanently,
+        with no way out from the board.
+
+        The audit trail is deliberately NOT cleared. It is the durable record
+        and it spans shifts; that is the entire point of it.
+        """
+        self.patients.clear()
+        self.in_treatment.clear()
+        self.seen.clear()
+        self.events_log.clear()
+        self.ticker.clear()
+        self.workflow = Workflow()
+        self._next_ticket = 1
+
     # --- ingest ------------------------------------------------------------
 
     def on_arrival(self, e) -> None:
@@ -417,6 +438,10 @@ class QueueEngine:
 
     # --- blind nurse-first assessment (PRD 5.2, 6.1, 10.1) -------------------
 
+    def _on_board(self, stay_id: int):
+        """The patient, or None if they have left the board entirely."""
+        return self.patients.get(stay_id) or self.in_treatment.get(stay_id)
+
     def nurse_assess(self, stay_id: int, esi: int) -> dict:
         """
         The nurse commits to an ESI. ATRIA is still hidden at this point.
@@ -425,6 +450,13 @@ class QueueEngine:
         token exists only because the assessment was durably recorded, which is
         what makes the ordering a server invariant rather than a convention.
         """
+        # Check the patient exists here, not two calls later. Accepting an
+        # assessment for somebody who has left the board and then failing at the
+        # reveal leaves the nurse having committed to a number for a patient the
+        # system cannot show them.
+        if self._on_board(stay_id) is None:
+            raise BlindAssessmentError(
+                f"patient {stay_id} is no longer on the board")
         a = self.workflow.open(stay_id)
         token = a.submit_nurse_esi(esi)
         self.audit.append("nurse_assessment", stay_id, self.now,
@@ -434,9 +466,16 @@ class QueueEngine:
     def reveal(self, stay_id: int, token: str | None = None) -> dict:
         """Reveal ATRIA and resolve the comparison. Refuses to run early."""
         a = self.workflow.open(stay_id)
-        p = self.patients.get(stay_id) or self.in_treatment.get(stay_id)
+        p = self._on_board(stay_id)
         if p is None:
-            raise KeyError(stay_id)
+            # Was a bare KeyError, which escaped the route's handler and became
+            # a 500. A patient leaving the board mid-cycle is an ordinary event
+            # — a shift rolling over, or them being taken through — and the
+            # nurse needs to be told that, not shown a server error.
+            raise BlindAssessmentError(
+                f"patient {stay_id} left the board before the reveal; "
+                f"their assessment was recorded but there is nothing to compare "
+                f"against. Pick the next patient.")
         outcome = a.reveal(p.band if not p.abstained else None,
                            abstained=p.abstained, guardrail=bool(p.red_flag),
                            token=token)
