@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import clsx from "clsx";
 import { useQueue } from "@/lib/queue-context";
 import { useFlip } from "@/lib/useFlip";
 import { QueueList } from "@/components/QueueList";
@@ -16,6 +17,7 @@ export default function AssessmentPage() {
 
   const rows = snapshot?.rows ?? [];
   const waiting = rows.filter((r) => r.state !== "IN TREATMENT");
+  const inTreatment = rows.filter((r) => r.state === "IN TREATMENT");
   /*
    * The selection is pinned once a nurse picks someone.
    *
@@ -28,6 +30,27 @@ export default function AssessmentPage() {
   const pinned = ticket ? rows.find((r) => r.ticket === ticket) ?? null : null;
   const selected = pinned ?? (ticket ? null : waiting[0] ?? null);
   const pinnedLeftQueue = pinned !== null && pinned.state === "IN TREATMENT";
+
+  /*
+   * Follow the patient. If the person you were looking at is taken through to a
+   * bay, the tab moves with them — otherwise they vanish from the list you are
+   * on and it looks as though the board lost them, which is the confusion this
+   * whole change is meant to remove.
+   */
+  useEffect(() => {
+    if (pinnedLeftQueue) setView("treatment");
+  }, [pinnedLeftQueue]);
+
+  /*
+   * Which list occupies the left column.
+   *
+   * Patients in a bay belong on the board — a nurse needs to know who is where
+   * — but not mixed into a list headed "Attention order", where they read as
+   * still needing you. Two views in one place, and the tab says how many are
+   * in each, so nothing is hidden by being on the other tab.
+   */
+  const [view, setView] = useState<"waiting" | "treatment">("waiting");
+  const listed = view === "waiting" ? waiting : inTreatment;
 
   const scroller = useRef<HTMLDivElement>(null);
   const flipRef = useFlip(rows.map((r) => r.ticket), scroller);
@@ -50,9 +73,9 @@ export default function AssessmentPage() {
           ["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-      const i = waiting.findIndex((r) => r.ticket === selected?.ticket);
-      if (e.key === "j" && i < waiting.length - 1) return setTicket(waiting[i + 1].ticket);
-      if (e.key === "k" && i > 0) return setTicket(waiting[i - 1].ticket);
+      const i = listed.findIndex((r) => r.ticket === selected?.ticket);
+      if (e.key === "j" && i < listed.length - 1) return setTicket(listed[i + 1].ticket);
+      if (e.key === "k" && i > 0) return setTicket(listed[i - 1].ticket);
 
       if (/^[1-5]$/.test(e.key)) {
         e.preventDefault();
@@ -64,7 +87,7 @@ export default function AssessmentPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [waiting, selected]);
+  }, [listed, selected]);
 
   if (!snapshot) {
     return (
@@ -108,21 +131,56 @@ export default function AssessmentPage() {
       </div>
 
       <div className="grid lg:grid-cols-[1.15fr_1.15fr_1fr] gap-5">
-        <section aria-label="Attention queue">
-          <h2 className="text-[17px] font-semibold mb-1">Attention order</h2>
+        <section aria-label="Patient lists">
+          <div role="tablist" aria-label="Which patients to show"
+               className="flex gap-1 mb-2 p-1 rounded-xl bg-sunk border border-line">
+            {([["waiting", "Attention order", waiting.length],
+               ["treatment", "Treatment bay", inTreatment.length]] as const)
+              .map(([key, text, count]) => (
+                <button key={key} role="tab" aria-selected={view === key}
+                        onClick={() => setView(key)}
+                        className={clsx(
+                          "flex-1 px-3 py-2 rounded-lg text-[15px] transition-colors",
+                          view === key
+                            ? "bg-card text-ink font-semibold shadow-[0_1px_2px_rgba(33,52,58,.08)]"
+                            : "text-ink2 hover:text-ink",
+                        )}>
+                  {text}{" "}
+                  <span className={view === key ? "text-brand" : "text-ink3"}>{count}</span>
+                </button>
+              ))}
+          </div>
           <p className="text-[14px] text-ink2 mb-3 leading-relaxed">
-            Tap a patient to assess them. <b>j</b> and <b>k</b> move down and
-            up, <b>1</b>–<b>5</b> record your priority, <b>Enter</b> confirms.
-            <br />
-            <span className="text-ink3">
-              The order settles every 20 seconds so it does not move while you
-              are reading it — but anyone who gets <b>worse</b> moves up
-              straight away.
-            </span>
+            {view === "waiting" ? (
+              <>
+                Tap a patient to assess them. <b>j</b> and <b>k</b> move down
+                and up, <b>1</b>–<b>5</b> record your priority, <b>Enter</b>{" "}
+                confirms.
+                <br />
+                <span className="text-ink3">
+                  The order settles every 20 seconds so it does not move while
+                  you are reading it — but anyone who gets <b>worse</b> moves up
+                  straight away.
+                </span>
+              </>
+            ) : (
+              <>
+                Patients already in a bay. They are not waiting for you — this
+                is here so you can see who is where.
+                <br />
+                <span className="text-ink3">
+                  Tap one to read their record or report a change.
+                </span>
+              </>
+            )}
           </p>
-          <QueueList rows={rows} selectedTicket={selected?.ticket ?? null}
+          <QueueList rows={listed} selectedTicket={selected?.ticket ?? null}
                      onSelect={(x) => setTicket(x.ticket)}
-                     flipRef={flipRef} scroller={scroller} />
+                     flipRef={flipRef} scroller={scroller}
+                     label={view === "waiting" ? "Attention order" : "Treatment bay"}
+                     emptyMessage={view === "waiting"
+                       ? "Nobody waiting."
+                       : "No one in a treatment bay."} />
         </section>
 
         <section aria-label="Nurse assessment">
