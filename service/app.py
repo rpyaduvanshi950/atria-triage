@@ -54,11 +54,33 @@ app.add_middleware(
     CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True,
     allow_methods=["GET", "POST"], allow_headers=["*"],
 )
+#: The demo shift. Tunable from the environment so a rehearsal does not need a
+#: code change.
+#:
+#: The defaults were chosen after watching the old ones fail a demo. At 240x a
+#: three-hour shift lasted 45 seconds, and the seed came from the clock — so
+#: every 51 seconds the board wiped and refilled with forty different people
+#: while reusing the same ticket numbers. A-13 was a different patient each
+#: time you looked. Nothing could be narrated, and nothing could be verified.
+DEMO_SPEED = float(os.environ.get("ATRIA_DEMO_SPEED", "30"))      # ~6 min shift
+DEMO_SEED = int(os.environ.get("ATRIA_DEMO_SEED", "7"))           # same cast
+DEMO_PATIENTS = int(os.environ.get("ATRIA_DEMO_PATIENTS", "100"))
+DEMO_HOURS = float(os.environ.get("ATRIA_DEMO_HOURS", "3"))
+
+#: Treatment bays for the demo. The engine defaults to 3, which is right for a
+#: scenario fixture exercising triage logic and wrong for a hundred arrivals:
+#: three bays clear about sixteen patients in three hours, so the queue would
+#: grow to eighty-four and never drain. Twelve leaves a real, working queue of
+#: roughly thirty-five, which is a department under pressure rather than a
+#: department that has stopped.
+DEMO_SLOTS = int(os.environ.get("ATRIA_DEMO_SLOTS", "12"))
+
 #: ATRIA_DB points the audit trail at a SQLite file that outlives the process.
 #: Unset means in-memory, which is right for a test and wrong for a deployment,
 #: so the startup banner says which one is in force.
 _DB = os.environ.get("ATRIA_DB", "")
-engine = QueueEngine(audit=AuditLog(store=AuditStore(_DB)) if _DB else None)
+engine = QueueEngine(audit=AuditLog(store=AuditStore(_DB)) if _DB else None,
+                     slots=DEMO_SLOTS)
 clients: set[WebSocket] = set()
 
 
@@ -72,17 +94,27 @@ async def startup() -> None:
           "ATRIA: audit trail in memory only — set ATRIA_DB to keep it")
     if engine.shadow:
         print("ATRIA: SHADOW MODE — every layer runs, nothing acts on the board")
+    print(f"ATRIA: demo shift = {DEMO_PATIENTS} patients over {DEMO_HOURS:g}h at "
+          f"{DEMO_SPEED:g}x (~{DEMO_HOURS * 3600 / DEMO_SPEED / 60:.0f} min real), "
+          f"{DEMO_SLOTS} bays, seed {DEMO_SEED}")
     engine.scorer = artifact.load_or_train(
         lambda: AcuityScorer().fit(generate(1500, seed=3)))
     asyncio.create_task(_replay())
 
 
-async def _replay(speed: float = 240.0, surge: float = 1.0) -> None:
-    """Replay a synthetic shift on loop so the board is never empty."""
+async def _replay(speed: float | None = None, surge: float = 1.0) -> None:
+    """
+    Replay one synthetic shift on loop, so the board is never empty.
+
+    The seed is fixed. Every cycle brings back the same hundred patients in the
+    same order, which is what makes a demo rehearsable and a bug reproducible.
+    Set ATRIA_DEMO_SEED to vary it.
+    """
+    speed = DEMO_SPEED if speed is None else speed
     while True:
         # One call, so a new piece of per-shift state cannot be forgotten here.
         engine.reset_shift()
-        ds = generate(40, seed=int(asyncio.get_event_loop().time()) % 1000, hours=3.0)
+        ds = generate(DEMO_PATIENTS, seed=DEMO_SEED, hours=DEMO_HOURS)
         clock = ReplayClock(build_events(ds, surge=surge), speed=speed)
         async for event in clock.stream():
             if event.kind == "arrival":

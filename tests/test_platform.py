@@ -484,3 +484,47 @@ def test_reading_an_assessment_needs_a_role_that_may_assess(api):
     # an auditor reads the trail, not a live assessment
     assert client.get(f"/v1/assessments/{stay}",
                       headers=_login(client, "audit.demo")).status_code == 403
+
+
+# --- the demo shift ----------------------------------------------------------
+
+def test_the_demo_shift_is_reproducible():
+    """
+    The old replay seeded from the wall clock, so every cycle brought forty
+    different people while reusing the same ticket numbers. A-13 was somebody
+    new each time you looked, which makes a demo unrehearsable and a bug
+    unreproducible. A fixed seed is the whole fix.
+    """
+    import service.app as app_module
+    from data.loaders.synthetic import generate
+    from service.clock import build_events
+
+    a = build_events(generate(app_module.DEMO_PATIENTS, seed=app_module.DEMO_SEED,
+                              hours=app_module.DEMO_HOURS))
+    b = build_events(generate(app_module.DEMO_PATIENTS, seed=app_module.DEMO_SEED,
+                              hours=app_module.DEMO_HOURS))
+    assert [e.stay_id for e in a] == [e.stay_id for e in b]
+    assert sum(1 for e in a if e.kind == "arrival") == app_module.DEMO_PATIENTS
+
+
+def test_the_demo_department_can_actually_treat_its_arrivals():
+    """
+    Capacity has to bear some relation to volume. Three bays clear about sixteen
+    patients in three hours, so a hundred arrivals would queue to eighty-four
+    and never drain — a department that has stopped, not one under pressure.
+    """
+    import service.app as app_module
+    from service.queue import TREATMENT_MINUTES
+
+    average_stay = sum(TREATMENT_MINUTES.values()) / len(TREATMENT_MINUTES)
+    treated = app_module.DEMO_SLOTS * (app_module.DEMO_HOURS * 60 / average_stay)
+    assert treated >= 0.5 * app_module.DEMO_PATIENTS, "most arrivals never get seen"
+    assert treated <= 0.95 * app_module.DEMO_PATIENTS, "no queue left to demonstrate"
+
+
+def test_a_shift_fits_in_a_demo_slot():
+    """Long enough to narrate, short enough to loop while someone watches."""
+    import service.app as app_module
+
+    minutes = app_module.DEMO_HOURS * 3600 / app_module.DEMO_SPEED / 60
+    assert 3 <= minutes <= 15, f"a {minutes:.0f} minute shift is not demoable"
