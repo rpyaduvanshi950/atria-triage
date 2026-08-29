@@ -75,6 +75,10 @@ class Patient:
     overdue_by: float = 0.0
     #: set when a clinician takes them through; they leave the waiting board
     seen_at: pd.Timestamp | None = None
+    #: when the nurse signed them off. With seen_at this gives the treatment
+    #: list a fixed order — the order care actually started — so it does not
+    #: reshuffle by priority under a nurse who is using it as a worklist.
+    signed_off_at: pd.Timestamp | None = None
     leaves_at: pd.Timestamp | None = None
     seen_at_band: int | None = None
     #: latest recorded vitals, for the record panel
@@ -114,6 +118,7 @@ class Patient:
             complaint=self.complaint, waited=round(self.waited(now)),
             overdue_by=round(self.overdue_by), readings=len(self.history),
             signed_off=self.signed_off,
+            care_since=str(self.seen_at or self.signed_off_at or ""),
         )
 
 
@@ -404,8 +409,17 @@ class QueueEngine:
         # in a bay, not just who is queueing. They sort below everyone waiting.
         for stay_id, p in self.patients.items():
             p.held_for_assessment = self.mid_assessment(stay_id)
-        rows = ([p.as_dict(now) for p in self.patients.values()]
-                + [p.as_dict(now) for p in self.in_treatment.values()])
+
+        def row_of(p: "Patient") -> dict:
+            # The workflow stage travels with the row so a client can render the
+            # step the patient is actually on. Without it the panel always
+            # opened at "choose a priority", which the server then refused for
+            # anyone already part-way through.
+            return {**p.as_dict(now),
+                    "assessment_stage": self.workflow.open(p.stay_id).stage.value}
+
+        rows = ([row_of(p) for p in self.patients.values()]
+                + [row_of(p) for p in self.in_treatment.values()])
         rows.sort(key=lambda r: (r["state"] == "IN TREATMENT",
                                  r["state"] != "AWAITING", r["band"], -r["waited"]))
         lanes = {name: sum(1 for r in rows
@@ -495,6 +509,7 @@ class QueueEngine:
         if p is not None:
             p.band = apply(p.band, final, Source.HUMAN)
             p.signed_off = True
+            p.signed_off_at = self.now
             p.state = "STABLE"
         self.audit.append("sign_off", stay_id, self.now, final_esi=final,
                           nurse_esi=a.nurse_esi, atria_esi=a.atria_esi,
@@ -517,6 +532,7 @@ class QueueEngine:
         p = self.patients.get(stay_id) or self.in_treatment.get(stay_id)
         if p is not None:
             p.signed_off = False
+            p.signed_off_at = None
             p.state = "AWAITING"
             p.worsening = True
         self.audit.append("worsening_reported", stay_id, self.now,

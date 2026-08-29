@@ -17,7 +17,9 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <p className="text-center text-ink3 text-[15px] mt-16">Checking session…</p>
+      <p className="flex-1 grid place-items-center text-ink3 text-[15px]">
+        Checking session…
+      </p>
     );
   }
   if (!user) return <SignIn />;

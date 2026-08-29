@@ -124,6 +124,11 @@ export const api = {
       { method: "POST" },
     ),
 
+  /** The current step, without advancing it. Carries no recommendation before
+      the nurse has committed, because the payload has none to carry. */
+  assessment: (stayId: number) =>
+    request<AssessmentView>(`/v1/assessments/${stayId}`),
+
   /**
    * 409 if the nurse has not committed, or if the token does not match.
    * The token is minted only when the assessment is stored, so the order is a

@@ -43,6 +43,10 @@ export interface QueueRow {
   abstain_reason: string;
   worsening: boolean;
   signed_off: boolean;
+  /** When care began: taken through, or signed off. "" if neither. */
+  care_since: string;
+  /** Where the server has this patient in the blind cycle. */
+  assessment_stage: "awaiting_nurse" | "compared" | "signed";
   vitals: Vitals;
 }
 

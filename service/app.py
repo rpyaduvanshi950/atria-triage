@@ -278,6 +278,21 @@ async def nurse_assessment(
         return JSONResponse({"error": str(exc)}, status_code=409)
 
 
+@app.get("/v1/assessments/{stay_id}")
+async def read_assessment(
+        stay_id: int,
+        user: Principal = Depends(requires("assess:write"))) -> JSONResponse:
+    """
+    The current state of one assessment, without advancing it.
+
+    Safe by construction rather than by care: this returns exactly what
+    `visible_to_nurse()` returns, and that method omits the recommendation until
+    the nurse has committed. There is no branch here that could leak it early
+    because there is no recommendation in the payload to leak.
+    """
+    return JSONResponse(engine.workflow.open(stay_id).visible_to_nurse())
+
+
 @app.post("/v1/assessments/{stay_id}/reveal")
 async def reveal(stay_id: int, reveal_token: str = "",
                  user: Principal = Depends(requires("assess:write"))) -> JSONResponse:

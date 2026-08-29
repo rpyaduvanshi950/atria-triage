@@ -11,28 +11,29 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { ApiError, api } from "@/lib/api";
 import { ESI_FULL, ESI_SHORT, PRIORITY_NAME, REASON_CHOICES } from "@/types/copy";
+import { Vitals } from "@/components/Vitals";
 import type { AssessmentView, Outcome, QueueRow } from "@/types/atria";
 
 const OUTCOME: Record<Outcome, { tone: string; title: string; body: string }> = {
   match: {
     tone: "ok", title: "You and ATRIA agree",
-    body: "Nothing to resolve. Confirm and move on.",
+    body: "Nothing to resolve.",
   },
   nurse_escalation: {
-    tone: "warn", title: "You chose more urgent than ATRIA",
-    body: "Your decision stands and you do not need to explain it. Nurses raising urgency are never questioned. The difference is recorded.",
+    tone: "warn", title: "You chose more urgent",
+    body: "Your decision stands. Raising urgency is never questioned. The difference is recorded.",
   },
   nurse_downgrade: {
-    tone: "warn", title: "You chose less urgent than ATRIA",
-    body: "This is the direction that can cause harm, so please say why before you sign off.",
+    tone: "warn", title: "You chose less urgent",
+    body: "This is the direction that can cause harm. Please say why.",
   },
   guardrail: {
-    tone: "danger", title: "A safety rule fired on a recorded reading",
-    body: "You can still choose less urgent, but please say why. The charge nurse is told.",
+    tone: "danger", title: "A safety rule fired",
+    body: "You can still choose less urgent, but say why. The charge nurse is told.",
   },
   uncertain: {
-    tone: "warn", title: "ATRIA would not give a score",
-    body: "Important readings are missing and it will not guess. Take the vitals, or say why you are signing off without them.",
+    tone: "warn", title: "ATRIA would not score",
+    body: "Readings are missing and it will not guess. Take them, or say why not.",
   },
 };
 
@@ -62,7 +63,22 @@ export function BlindAssessment({ row, onChanged }: {
   useEffect(() => {
     setView(null); setToken(""); setProblem(null); setNote("");
     setPending(null); setBlocked(false);
-  }, [row.stay_id]);
+
+    /*
+     * Ask the server where this patient actually is.
+     *
+     * The panel used to assume every patient was at step one. Anyone part-way
+     * through was shown the priority buttons anyway, and pressing one was
+     * refused with a 409 they could do nothing about. The stage belongs to the
+     * server, so it is read from the server.
+     */
+    if (row.assessment_stage === "awaiting_nurse") return;
+    let cancelled = false;
+    api.assessment(row.stay_id)
+      .then((v) => { if (!cancelled) setView(v); })
+      .catch(() => { /* fall back to step one; the buttons will say if not */ });
+    return () => { cancelled = true; };
+  }, [row.stay_id, row.assessment_stage]);
 
   const stage = view?.stage ?? "awaiting_nurse";
   const stepIndex = stage === "awaiting_nurse" ? 0 : stage === "compared" ? 1 : 2;
@@ -161,11 +177,11 @@ export function BlindAssessment({ row, onChanged }: {
         <>
           <div className="rounded-xl border border-brand bg-brandsoft p-4 mb-4">
             <p className="text-[16px] font-semibold text-brand">
-              Choose nurse ESI
+              Your priority for this patient
             </p>
             <p className="text-[15px] text-ink2 mt-1 leading-relaxed">
-              Atria stays hidden until you choose. Seeing a number first makes it
-              harder to trust your own judgement, so you decide, then we compare.
+              ATRIA stays hidden until you choose. You decide first, then we
+              compare.
             </p>
           </div>
 
@@ -177,12 +193,17 @@ export function BlindAssessment({ row, onChanged }: {
               </b>
               <p className="text-[14px] text-ink2 mt-1 leading-relaxed">
                 {problem ?? "The board has moved on."} Pick another patient from
-                the queue — trying again here will not help.
+                the queue. Trying again here will not help.
               </p>
             </div>
           )}
 
-          <div className="grid gap-2">
+          {/* The readings, where the decision is made. Asking someone to choose
+              a priority while the numbers live in another column is how a
+              priority gets chosen from a chief complaint alone. */}
+          <Vitals row={row} compact />
+
+          <div className="grid gap-2 mt-3">
             {[1, 2, 3, 4, 5].map((esi) => (
               <button key={esi} disabled={busy || blocked} onClick={() => choose(esi)}
                       aria-keyshortcuts={String(esi)}
@@ -203,20 +224,38 @@ export function BlindAssessment({ row, onChanged }: {
                   <span className="text-[14px] text-ink3 ml-auto">{PRIORITY_NAME[esi]}</span>
                 </div>
                 <div className="text-[14px] text-ink2 mt-0.5 ml-9">
-                  {ESI_FULL[esi].split(" — ")[1]}
+                  {ESI_FULL[esi].split(". ").slice(1).join(". ")}
                 </div>
               </button>
             ))}
           </div>
         </>
       ) : (
-        <>
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <Card label="Nurse ESI" esi={view.nurse_esi} highlight />
-            <Card label="Atria recommendation"
-                  esi={view.atria_abstained ? null : view.atria_esi ?? null}
-                  fallback="No score" />
-          </div>
+        /*
+         * Signing off happens over the whole screen, not in a column.
+         *
+         * It is the one moment that cannot be half-done: the board behind is
+         * still moving, and a nurse deciding whether to accept or overrule a
+         * recommendation should not be reading a re-ranking queue out of the
+         * corner of their eye. Blurring it says the rest can wait without
+         * hiding that it is still there.
+         */
+        <div className="fixed inset-0 z-40 flex items-start justify-center
+                        overflow-y-auto p-4 sm:p-8"
+             role="dialog" aria-modal="true" aria-label="Compare and sign off">
+          <div className="fixed inset-0 bg-ink/25 backdrop-blur-sm" aria-hidden />
+          <div className="relative w-full max-w-[560px] rounded-2xl bg-card
+                          border border-line shadow-xl p-5 my-auto">
+            <div className="flex items-baseline gap-2 mb-3">
+              <span className="text-[17px] font-semibold">{row.ticket}</span>
+              <span className="text-[15px] text-ink2">{row.complaint}</span>
+            </div>
+
+          {/* One card, and it is the nurse's. ATRIA's number belongs with the
+              reasons for it, not beside yours as an equal claim. */}
+          <Card label="Your priority" esi={view.nurse_esi} highlight />
+
+          <AtriaSaid view={view} row={row} />
 
           {view.outcome && <Banner outcome={view.outcome} />}
 
@@ -226,9 +265,8 @@ export function BlindAssessment({ row, onChanged }: {
                 Signed off at priority {view.final_esi}
               </p>
               <p className="text-[14px] text-ink2 mt-1">
-                Saved with your name, the time, and the readings it was based on.
-                Nothing more is needed for this patient — pick the next one from
-                the queue.
+                Saved with your name, the time and the readings. Pick the next
+                patient.
               </p>
             </div>
           ) : (
@@ -273,7 +311,8 @@ export function BlindAssessment({ row, onChanged }: {
               </button>
             </>
           )}
-        </>
+          </div>
+        </div>
       )}
 
       <button disabled={busy} onClick={() => run(() => api.worsening(row.stay_id))}
@@ -284,9 +323,8 @@ export function BlindAssessment({ row, onChanged }: {
       </button>
       <p className="text-[14px] text-ink3 mt-2 leading-relaxed">
         Press this if they have worsened, or new observations have come back.
-        It reopens the decision and asks for your ESI again from scratch —
-        ATRIA&apos;s earlier suggestion is thrown away so it cannot sway you the
-        second time.
+        It reopens the decision and asks for your priority again from scratch.
+        ATRIA&apos;s earlier suggestion is thrown away.
       </p>
 
       {problem && (
@@ -305,7 +343,7 @@ function Card({ label, esi, highlight, fallback }: {
     <div className={clsx("rounded-xl border p-4 text-center",
                          highlight ? "border-brand bg-brandsoft" : "border-line bg-card")}>
       <div className="text-[14px] text-ink2">{label}</div>
-      <div className="text-[36px] font-bold leading-tight">{esi ?? "—"}</div>
+      <div className="text-[36px] font-bold leading-tight">{esi ?? "?"}</div>
       <div className="text-[14px] text-ink2">{esi ? ESI_SHORT[esi] : fallback ?? ""}</div>
     </div>
   );
@@ -322,6 +360,59 @@ function Banner({ outcome }: { outcome: Outcome }) {
     <div className={clsx("rounded-xl border p-4", tones[c.tone])}>
       <p className="text-[16px] font-semibold">{c.title}</p>
       <p className="text-[15px] text-ink2 mt-1 leading-relaxed">{c.body}</p>
+    </div>
+  );
+}
+
+
+/**
+ * What ATRIA said, and why it said it.
+ *
+ * A bare number invites a nurse either to defer to it or to dismiss it, and
+ * neither is a judgement. The reasons come from the server with the
+ * recommendation; nothing here re-derives them, because a second opinion
+ * computed in a browser would be a second source of truth.
+ */
+function AtriaSaid({ view, row }: { view: AssessmentView; row: QueueRow }) {
+  const abstained = view.atria_abstained || row.abstained;
+  const why = abstained
+    ? [row.abstain_reason].filter(Boolean)
+    : [row.red_flag, ...row.reasons].filter(Boolean) as string[];
+
+  return (
+    <div className="rounded-xl border border-line bg-sunk p-3.5 mt-3">
+      <div className="flex items-baseline gap-2">
+        <span className="text-[14px] text-ink2">ATRIA said</span>
+        <span className={clsx("text-[20px] font-bold",
+                              abstained ? "text-danger" : "text-ink")}>
+          {abstained ? "no score" : view.atria_esi}
+        </span>
+        {!abstained && (
+          <span className="text-[13px] text-ink3 ml-auto">
+            confidence {row.confidence.toLowerCase()}
+          </span>
+        )}
+      </div>
+
+      {why.length > 0 ? (
+        <ul className="mt-2 flex flex-col gap-1">
+          {why.slice(0, 3).map((r) => (
+            <li key={r} className="text-[14px] text-ink2 flex gap-2">
+              <span className="text-ink3">&bull;</span>{r}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-[14px] text-ink2 mt-1">
+          Nothing unusual in the readings it could see.
+        </p>
+      )}
+
+      {row.missing.length > 0 && (
+        <p className="text-[13px] text-warn mt-2">
+          Judged without: {row.missing.join(", ")}
+        </p>
+      )}
     </div>
   );
 }

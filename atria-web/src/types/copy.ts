@@ -17,11 +17,11 @@ export const PRIORITY_NAME: Record<number, string> = {
 };
 
 export const ESI_FULL: Record<number, string> = {
-  1: "Resuscitation — needs a life-saving intervention now",
-  2: "Emergent — high risk or time-critical, cannot wait",
-  3: "Urgent — stable enough to wait briefly, likely several resources",
-  4: "Less urgent — stable, likely one resource",
-  5: "Non-urgent — stable, likely nothing beyond an examination",
+  1: "Resuscitation. Life-saving intervention now",
+  2: "Emergent. High risk, cannot wait",
+  3: "Urgent. Stable enough to wait briefly",
+  4: "Less urgent. Stable, one resource",
+  5: "Non-urgent. Stable, examination only",
 };
 
 export const ESI_SHORT: Record<number, string> = {
@@ -61,15 +61,46 @@ export const REASON_CHOICES: Record<string, string> = {
   reassessed_at_bedside: "I went and looked at the patient",
   clinically_well: "The numbers look worse than the patient does",
   known_baseline: "These readings are normal for this patient",
-  artefact: "The reading is wrong — bad probe or cuff",
+  artefact: "The reading is wrong. Bad probe or cuff",
   resource_constraint: "We do not have the capacity right now",
   other: "Something else",
 };
 
-export const VITAL_INFO: Record<string, { label: string; full: string; normal: string; unit: string }> = {
-  heartrate:   { label: "Pulse",     full: "Heart rate",        normal: "50–110",  unit: "bpm" },
-  sbp:         { label: "BP",        full: "Blood pressure",    normal: "90–180",  unit: "mmHg" },
-  o2sat:       { label: "Oxygen",    full: "Oxygen saturation", normal: "94 +",    unit: "%" },
-  resprate:    { label: "Breathing", full: "Breaths per minute", normal: "10–30",  unit: "/min" },
-  temperature: { label: "Temp",      full: "Temperature",       normal: "36–38.5", unit: "°C" },
+export const VITAL_INFO: Record<string, {
+  label: string; full: string; normal: string; unit: string;
+  /** Outside this, flag it. */
+  ok: [number, number];
+  /** Outside this, it is a red flag rather than merely abnormal. */
+  bad: [number, number];
+}> = {
+  heartrate:   { label: "Pulse",     full: "Heart rate",         normal: "50-110",  unit: "bpm",
+                 ok: [50, 110],   bad: [40, 130] },
+  sbp:         { label: "BP",        full: "Blood pressure",     normal: "90-180",  unit: "mmHg",
+                 ok: [90, 180],   bad: [80, 200] },
+  o2sat:       { label: "Oxygen",    full: "Oxygen saturation",  normal: "94+",     unit: "%",
+                 ok: [94, 100],   bad: [90, 100] },
+  resprate:    { label: "Breathing", full: "Breaths per minute", normal: "10-30",   unit: "/min",
+                 ok: [10, 30],    bad: [8, 36] },
+  temperature: { label: "Temp",      full: "Temperature",        normal: "36-38.5", unit: "\u00b0C",
+                 ok: [36, 38.5],  bad: [35, 40] },
 };
+
+/**
+ * How far outside normal a reading is.
+ *
+ * These thresholds are for COLOUR ONLY. The clinical decision is made in
+ * layer0/rules.yaml on the server, against age-banded values a browser does not
+ * have. Two sources of truth for a threshold is how they drift, so nothing here
+ * may ever change a band, a warning, or what the nurse is asked to justify.
+ */
+export type VitalLevel = "normal" | "abnormal" | "critical";
+
+export function vitalLevel(key: string, value: number): VitalLevel {
+  const info = VITAL_INFO[key];
+  if (!info) return "normal";
+  const [lo, hi] = info.ok;
+  const [blo, bhi] = info.bad;
+  if (value < blo || value > bhi) return "critical";
+  if (value < lo || value > hi) return "abnormal";
+  return "normal";
+}

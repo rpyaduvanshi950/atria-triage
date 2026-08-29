@@ -90,7 +90,7 @@ export function QueueRowCard({
         <div className="text-[15px] text-ink2 mt-0.5">
           <b className="text-ink">{PRIORITY_NAME[row.band]}</b>
           <span className="text-ink3"> · {LANE_NAME[row.lane] ?? row.lane}</span>
-          <span className="text-ink3"> · waiting {treating ? "— in a room" : `${row.waited} min`}</span>
+          <span className="text-ink3"> · {treating ? "in a room" : `waiting ${row.waited} min`}</span>
           {row.overdue_by > 0 && !treating && (
             <b className="text-warn"> · {row.overdue_by} min overdue for a recheck</b>
           )}
@@ -99,7 +99,7 @@ export function QueueRowCard({
         {why && <div className="text-[15px] text-ink2 mt-1.5 line-clamp-2">{why}</div>}
 
         <div className="flex gap-1.5 mt-2 flex-wrap">
-          {row.red_flag && <Chip tone="danger">Safety rule — see now</Chip>}
+          {row.red_flag && <Chip tone="danger">Safety rule: see now</Chip>}
           {row.abstained && <Chip tone="danger">Needs you to decide</Chip>}
           {row.needs_measurement && !row.red_flag && <Chip tone="warn">Take vitals</Chip>}
           {row.worsening && <Chip tone="warn">Getting worse</Chip>}

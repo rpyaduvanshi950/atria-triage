@@ -26,13 +26,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
      * here and would not be safe on a component rendering patient data.
      */
     <html lang="en" suppressHydrationWarning>
-      <body className="min-h-screen" suppressHydrationWarning>
+      <body className="min-h-screen flex flex-col" suppressHydrationWarning>
         <AuthProvider>
           {/* INT-008: simulation data must never be mistaken for a live read.
               Outside the gate on purpose — it is true of the sign-in page too. */}
           <div className="bg-warn text-white text-center text-[14px] font-semibold py-1.5">
             SIMULATION — synthetic patients. Not a live department.
           </div>
+          {/* flex-1 so anything the gate renders gets the height left over
+              after the banner, instead of guessing at it with a calc(). */}
           <AuthGate>
             <Shell>{children}</Shell>
           </AuthGate>

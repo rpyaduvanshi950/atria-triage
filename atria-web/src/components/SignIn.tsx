@@ -3,26 +3,22 @@
 /**
  * The sign-in screen.
  *
- * Deliberately plain. A nurse signing in at the start of a shift wants two
- * fields and a button, and the demo accounts are listed on the page because
- * hiding them from a judge who has thirty seconds helps nobody.
+ * Deliberately plain: a nurse starting a shift wants two fields and a button.
+ *
+ * The demo credentials are pre-filled rather than listed. A wall of accounts
+ * was there so nobody had to hunt for a password, but it turned the first
+ * screen of a clinical product into a table of test logins. Filling the fields
+ * does the same job and takes a keystroke fewer.
  */
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 
-const DEMO = [
-  ["nurse.demo", "Triage nurse", "assess and sign off"],
-  ["charge.demo", "Charge nurse", "the above, plus acknowledgements and flow"],
-  ["doc.demo", "Clinician", "the above, plus lowering a priority"],
-  ["ops.demo", "Flow coordinator", "the department view only"],
-  ["audit.demo", "Clinical governance", "the decision history, read-only"],
-  ["admin.demo", "Administrator", "everything, including shadow mode"],
-] as const;
-
 export function SignIn() {
   const { signIn } = useAuth();
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  /* Pre-filled for the prototype. A real deployment sets ATRIA_USERS, at which
+     point these accounts do not exist and the fields start empty. */
+  const [username, setUsername] = useState("nurse.demo");
+  const [password, setPassword] = useState("nurse.demo");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -38,20 +34,19 @@ export function SignIn() {
     }
   };
 
-  const pick = (name: string) => {
-    setUsername(name);
-    setPassword(name);   // demo accounts only; the notice below says so
-    setError("");
-  };
-
   return (
-    <div className="max-w-[560px] mx-auto mt-10">
-      <div className="bg-card border border-line rounded-xl p-7">
+    /*
+     * Centred in whatever height is left below the banner. No calc(): the body
+     * is a flex column, so this just takes the remaining space and centres in
+     * it. A hardcoded subtraction was off by exactly the banner height, and
+     * would go wrong again the moment the banner changed.
+     */
+    <div className="flex-1 flex items-center justify-center px-4 py-8">
+      <div className="w-full max-w-[440px] bg-card border border-line rounded-xl p-7">
         <h1 className="text-[22px] font-bold">Sign in to ATRIA</h1>
         <p className="text-[15px] text-ink2 mt-1.5">
-          Every assessment, override and sign-off is recorded against the person
-          who made it. That record is only worth anything if the name on it is
-          real, which is why the board asks who you are first.
+          Every assessment and sign-off is recorded against the person who made
+          it, so the board asks who you are first.
         </p>
 
         <form onSubmit={submit} className="mt-5 flex flex-col gap-3">
@@ -87,27 +82,6 @@ export function SignIn() {
         </form>
       </div>
 
-      <div className="bg-card border border-line rounded-xl p-5 mt-4">
-        <h2 className="text-[15px] font-bold">Demo accounts</h2>
-        <p className="text-[14px] text-ink3 mt-1">
-          Prototype only — each password is the same as the username. Click one
-          to fill the form. A real deployment is configured with proper accounts
-          and these do not exist.
-        </p>
-        <ul className="mt-3 flex flex-col gap-1.5">
-          {DEMO.map(([name, role, what]) => (
-            <li key={name}>
-              <button onClick={() => pick(name)}
-                      className="w-full text-left px-3 py-2 rounded-xl hover:bg-sunk
-                                 transition-colors">
-                <span className="font-semibold text-[15px]">{role}</span>
-                <span className="text-ink3 text-[14px]"> · {name}</span>
-                <span className="block text-[13px] text-ink3">{what}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
     </div>
   );
 }

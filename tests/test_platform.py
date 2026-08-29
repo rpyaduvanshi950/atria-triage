@@ -433,3 +433,54 @@ def test_asking_whether_auth_is_on_is_not_itself_an_error(api):
     assert set(r.json()) == {"auth_enabled", "demo_accounts"}
     # and it must not leak anything about who exists
     assert "users" not in r.text and "nurse.demo" not in r.text
+
+
+# --- reading the workflow without advancing it -------------------------------
+
+def test_the_stage_travels_with_the_row(api):
+    """
+    Without it the board always opened at "choose a priority", and a patient
+    part-way through was shown buttons the server then refused with a 409 they
+    could do nothing about.
+    """
+    client, app_module = api
+    client.headers.update(_login(client, "nurse.demo"))
+    rows = client.get("/v1/queue").json()["rows"]
+    assert all("assessment_stage" in r for r in rows)
+    assert {r["assessment_stage"] for r in rows} <= {"awaiting_nurse", "compared", "signed"}
+
+    stay = rows[0]["stay_id"]
+    client.post(f"/v1/encounters/{stay}/nurse-assessments?esi=3")
+    after = next(r for r in client.get("/v1/queue").json()["rows"]
+                 if r["stay_id"] == stay)
+    assert after["assessment_stage"] == "compared" or after["assessment_stage"] == "awaiting_nurse"
+
+
+def test_reading_an_assessment_cannot_leak_the_recommendation(api):
+    """
+    The new GET must not become a way around the blind cycle. It returns what
+    visible_to_nurse() returns, and that omits the recommendation until the
+    nurse has committed — so there is nothing in the payload to leak.
+    """
+    client, app_module = api
+    client.headers.update(_login(client, "nurse.demo"))
+    stay = client.get("/v1/queue").json()["rows"][0]["stay_id"]
+
+    before = client.get(f"/v1/assessments/{stay}")
+    assert before.status_code == 200
+    body = before.json()
+    assert body["stage"] == "awaiting_nurse"
+    assert body.get("atria_esi") in (None, "")
+    assert "atria_esi" not in before.text or body.get("atria_esi") is None
+
+    # and it does not advance anything: the stage is unchanged afterwards
+    assert client.get(f"/v1/assessments/{stay}").json()["stage"] == "awaiting_nurse"
+
+
+def test_reading_an_assessment_needs_a_role_that_may_assess(api):
+    client, _ = api
+    nurse = _login(client, "nurse.demo")
+    stay = client.get("/v1/queue", headers=nurse).json()["rows"][0]["stay_id"]
+    # an auditor reads the trail, not a live assessment
+    assert client.get(f"/v1/assessments/{stay}",
+                      headers=_login(client, "audit.demo")).status_code == 403

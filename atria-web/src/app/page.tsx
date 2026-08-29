@@ -27,8 +27,13 @@ export default function AssessmentPage() {
    */
   const waiting = rows.filter(
     (r) => r.state !== "IN TREATMENT" && !r.signed_off);
-  const inTreatment = rows.filter(
-    (r) => r.state === "IN TREATMENT" || r.signed_off);
+  const inTreatment = rows
+    .filter((r) => r.state === "IN TREATMENT" || r.signed_off)
+    // Fixed order: when care actually started. This is a worklist, not a
+    // priority queue, and a list that reshuffles while you work down it is
+    // worse than useless. Ties fall back to the ticket so it is fully stable.
+    .sort((a, b) => (a.care_since || "").localeCompare(b.care_since || "")
+                    || a.ticket.localeCompare(b.ticket));
   const awaitingBay = inTreatment.filter((r) => r.state !== "IN TREATMENT");
   /*
    * The selection is pinned once a nurse picks someone.
@@ -137,7 +142,7 @@ export default function AssessmentPage() {
         <Stat label="Moved up" value={snapshot.escalated}
               hint="Patients ATRIA moved to a higher priority. It can never move anyone down." />
         <Stat label="Needs you" value={snapshot.abstained}
-              hint="ATRIA would not give a score — too little information to be safe." />
+              hint="ATRIA would not give a score. Too little information to be safe." />
       </div>
 
       {snapshot.degraded && (
@@ -159,7 +164,26 @@ export default function AssessmentPage() {
         </span>
       </div>
 
-      <div className="grid lg:grid-cols-[1.15fr_1.15fr_1fr] gap-5">
+      <div className="grid lg:grid-cols-[1fr_1.15fr_1.15fr] gap-5">
+        <section aria-label="Patient record">
+          <h2 className="text-[17px] font-semibold mb-3">Patient record</h2>
+          {selected && <PatientRecord row={selected} />}
+        </section>
+
+        <section aria-label="Nurse assessment">
+          <h2 className="text-[17px] font-semibold mb-3">
+            Nurse assessment
+            {selected && !pinned && (
+              <span className="font-normal text-[14px] text-ink3">
+                {" "}\u00b7 top of the list
+              </span>
+            )}
+          </h2>
+          {selected
+            ? <BlindAssessment key={selected.stay_id} row={selected} onChanged={refresh} />
+            : <p className="text-[13px] text-ink3">Nobody waiting.</p>}
+        </section>
+
         <section aria-label="Patient lists">
           <div role="tablist" aria-label="Which patients to show"
                className="flex gap-1 mb-2 p-1 rounded-xl bg-sunk border border-line">
@@ -182,25 +206,22 @@ export default function AssessmentPage() {
           <p className="text-[14px] text-ink2 mb-3 leading-relaxed">
             {view === "waiting" ? (
               <>
-                Tap a patient to assess them. <b>j</b> and <b>k</b> move down
-                and up, <b>1</b>–<b>5</b> record your priority, <b>Enter</b>{" "}
-                confirms.
+                Tap a patient to assess them. Keys: <b>j</b> <b>k</b> to move,{" "}
+                <b>1</b>–<b>5</b> to set priority, <b>Enter</b> to confirm.
                 <br />
                 <span className="text-ink3">
-                  The order settles every 20 seconds so it does not move while
-                  you are reading it — but anyone who gets <b>worse</b> moves up
-                  straight away.
+                  Order settles every 20 seconds. Anyone who gets worse moves up
+                  at once.
                 </span>
               </>
             ) : (
               <>
-                Triage is finished for these patients.{" "}
-                <b className="text-ok">Green</b> means they are in a bay being
-                treated. <b className="text-danger">Red</b> means you have signed
-                them off and nobody has taken them through yet.
+                <b className="text-ok">Green</b>: in a bay.{" "}
+                <b className="text-danger">Red</b>: signed off, still waiting for
+                one.
                 <br />
                 <span className="text-ink3">
-                  Tap one to read their record or report a change.
+                  Listed in the order care started, so it does not reshuffle.
                 </span>
               </>
             )}
@@ -212,25 +233,6 @@ export default function AssessmentPage() {
                      emptyMessage={view === "waiting"
                        ? "Everybody waiting has been assessed."
                        : "Nobody has been signed off yet."} />
-        </section>
-
-        <section aria-label="Nurse assessment">
-          <h2 className="text-[17px] font-semibold mb-3">
-            Nurse assessment
-            {selected && !pinned && (
-              <span className="font-normal text-[14px] text-ink3">
-                {" "}— top of the list
-              </span>
-            )}
-          </h2>
-          {selected
-            ? <BlindAssessment key={selected.stay_id} row={selected} onChanged={refresh} />
-            : <p className="text-[13px] text-ink3">Nobody waiting.</p>}
-        </section>
-
-        <section aria-label="Patient record">
-          <h2 className="text-[17px] font-semibold mb-3">Patient record</h2>
-          {selected && <PatientRecord row={selected} />}
         </section>
       </div>
     </>

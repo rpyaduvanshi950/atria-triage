@@ -228,3 +228,41 @@ def test_assessing_a_patient_who_is_not_there_is_refused_up_front():
     q = _engine_with_patients()
     with pytest.raises(BlindAssessmentError):
         q.nurse_assess(123456789, 3)
+
+
+def test_care_since_fixes_the_treatment_list_order():
+    """
+    The treatment list is a worklist, not a priority queue. It is ordered by
+    when care actually started, so it does not reshuffle under a nurse working
+    down it. Without a timestamp the client had nothing stable to sort on.
+    """
+    q = _engine_with_patients(n=8)
+    stays = list(q.patients)[:3]
+    for s in stays:
+        out = q.nurse_assess(s, 3)
+        q.reveal(s, token=out["reveal_token"])
+        q.finalise(s, clinician="nurse.demo", reason_code="agree")
+
+    rows = {r["stay_id"]: r for r in q.snapshot()["rows"]}
+    for s in stays:
+        assert rows[s]["signed_off"] is True
+        assert rows[s]["care_since"], "a signed-off patient needs an ordering key"
+
+    # ordering by care_since is stable and follows the order they were signed off
+    order = sorted(stays, key=lambda s: rows[s]["care_since"])
+    assert order == stays
+
+
+def test_reporting_a_change_clears_the_care_marker():
+    """They are back in the queue, so they must not sort as though care began."""
+    q = _engine_with_patients()
+    stay = next(iter(q.patients))
+    out = q.nurse_assess(stay, 3)
+    q.reveal(stay, token=out["reveal_token"])
+    q.finalise(stay, clinician="nurse.demo", reason_code="agree")
+    assert q.patients[stay].signed_off_at is not None
+
+    q.report_change(stay, reporter="nurse.demo")
+    assert q.patients[stay].signed_off_at is None
+    row = next(r for r in q.snapshot()["rows"] if r["stay_id"] == stay)
+    assert row["care_since"] == "" and row["signed_off"] is False
