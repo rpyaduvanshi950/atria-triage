@@ -1,4 +1,4 @@
-.PHONY: help setup test test-all status demo streamlit scenarios eval fairness figures report extract-yale freeze shadow explainer clean
+.PHONY: help setup test test-all status demo streamlit scenarios eval fairness figures report extract-yale freeze shadow explainer readme-pdf clean
 
 help:
 	@echo "ATRIA — Accenture Innovation Challenge 2026, Track 2"
@@ -19,6 +19,7 @@ help:
 	@echo "  make freeze        train once and pin the model artifact + manifest"
 	@echo "  make shadow        start the board in shadow mode (nothing acts)"
 	@echo "  make explainer     re-render the plain-words PDF from its HTML source"
+	@echo "  make readme-pdf    render README.md to docs/pdf/ATRIA-README.pdf"
 
 setup:
 	python3 -m venv .venv
@@ -45,6 +46,10 @@ freeze:
 
 # Edit docs/pdf/atria-explained.html, then re-render. WeasyPrint comes from the
 # system, not the venv: `sudo apt install weasyprint`.
+# The README is the submission document and a judge may read it printed.
+readme-pdf:
+	.venv/bin/python docs/pdf/build_readme_pdf.py
+
 explainer:
 	@command -v weasyprint >/dev/null 2>&1 || { \
 	  echo "weasyprint not installed. Run: sudo apt install weasyprint"; exit 1; }
