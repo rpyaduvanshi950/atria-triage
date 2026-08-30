@@ -7,7 +7,7 @@
  * nurse has committed, and the reveal call carries a token the server issued
  * when their answer was stored — so the order cannot be skipped from here.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { ApiError, api } from "@/lib/api";
 import { ESI_FULL, ESI_SHORT, ESI_TONE, PRIORITY_NAME, REASON_CHOICES } from "@/types/copy";
@@ -54,31 +54,51 @@ export function BlindAssessment({ row, onChanged }: {
      either, so the buttons stop rather than firing the same refused call again
      every time a key repeats. */
   const [blocked, setBlocked] = useState(false);
+  /* The stage as it was when this patient was selected. Held in a ref so the
+     reset effect can read it without re-running every time it changes. */
+  const stageOnSelect = useRef({ stay: row.stay_id, stage: row.assessment_stage });
+  if (stageOnSelect.current.stay !== row.stay_id) {
+    stageOnSelect.current = { stay: row.stay_id, stage: row.assessment_stage };
+  }
   /* The ESI the nurse just pressed, shown immediately while the request is in
      flight. Optimistic about the *acknowledgement*, never about the outcome:
      the comparison and the sign-off state come from the server, because those
      are the parts a client guessing wrong would corrupt. */
   const [pending, setPending] = useState<number | null>(null);
 
+  /*
+   * Reset only when the patient changes.
+   *
+   * This used to depend on row.assessment_stage as well, and it clears `view`
+   * before doing anything else. So choosing a priority made the panel flicker
+   * through all three steps: the reveal put it on Compare, the refresh that
+   * followed brought back a snapshot where the stage had moved, the effect
+   * re-ran and wiped `view` back to step one, and the refetch then landed it on
+   * Sign off. The nurse's own action was resetting the screen in front of them.
+   *
+   * The stage still decides which step a patient opens on — it is read here,
+   * once, when the patient is selected. What it must not do is reset a workflow
+   * that is already in progress in this component.
+   */
   useEffect(() => {
     setView(null); setToken(""); setProblem(null); setNote("");
     setPending(null); setBlocked(false);
 
-    /*
-     * Ask the server where this patient actually is.
-     *
-     * The panel used to assume every patient was at step one. Anyone part-way
-     * through was shown the priority buttons anyway, and pressing one was
-     * refused with a 409 they could do nothing about. The stage belongs to the
-     * server, so it is read from the server.
-     */
-    if (row.assessment_stage === "awaiting_nurse") return;
+    // Ask the server where this patient actually is. Without this the panel
+    // assumed step one for everybody, and anyone part-way through got priority
+    // buttons the server then refused with a 409 they could do nothing about.
+    if (stageOnSelect.current.stage === "awaiting_nurse") return;
     let cancelled = false;
     api.assessment(row.stay_id)
-      .then((v) => { if (!cancelled) setView(v); })
+      .then((v) => {
+        // Only fill an empty panel. If the nurse has started answering while
+        // this was in flight, their state wins.
+        if (!cancelled) setView((current) => current ?? v);
+      })
       .catch(() => { /* fall back to step one; the buttons will say if not */ });
     return () => { cancelled = true; };
-  }, [row.stay_id, row.assessment_stage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row.stay_id]);
 
   const stage = view?.stage ?? "awaiting_nurse";
   const stepIndex = stage === "awaiting_nurse" ? 0 : stage === "compared" ? 1 : 2;
@@ -323,7 +343,7 @@ export function BlindAssessment({ row, onChanged }: {
 
       {problem && (
         <p role="status" className="text-[15px] text-warn mt-3 px-3 py-2 rounded-lg bg-warnsoft">
-          {note}
+          {problem}
         </p>
       )}
     </div>

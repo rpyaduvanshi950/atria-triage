@@ -29,8 +29,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen flex flex-col" suppressHydrationWarning>
         <AuthProvider>
           {/* INT-008: simulation data must never be mistaken for a live read.
-              Outside the gate on purpose — it is true of the sign-in page too. */}
-          <div className="bg-warn text-white text-center text-[14px] font-semibold py-1.5">
+              Outside the gate on purpose, since it is true of the sign-in page
+              too — and above it in the stacking order, because the sign-in
+              page's backdrop is fixed to the viewport and would otherwise wash
+              out the one label on screen that has to stay readable. */}
+          <div className="relative z-10 bg-warn text-white text-center
+                          text-[14px] font-semibold py-1.5">
             SIMULATION — synthetic patients. Not a live department.
           </div>
           {/* flex-1 so anything the gate renders gets the height left over

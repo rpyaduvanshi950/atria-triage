@@ -150,12 +150,16 @@ export default function AssessmentPage() {
               hint="Patients ATRIA moved to a higher priority. It can never move anyone down." />
         <Bays snapshot={snapshot} onChanged={refresh} />
 
+        {/* Hover deepens the tint and the border. It used to invert to a solid
+            brand fill with white text, which made the label the least readable
+            thing on the row at the moment the pointer was on it. */}
         <button onClick={() => setAdding(true)}
                 className="card border border-brand bg-brandsoft px-4 py-3 text-left
-                           hover:bg-brand hover:text-white transition-colors group">
-          <div className="text-[14px] text-brand group-hover:text-white">New arrival</div>
-          <div className="text-[19px] font-bold mt-0.5 leading-tight text-brand
-                          group-hover:text-white">
+                           hover:bg-brandsoft hover:border-brandink
+                           hover:shadow-[0_2px_10px_-4px_rgba(8,97,88,.45)]
+                           transition-all">
+          <div className="text-[14px] text-brand">New arrival</div>
+          <div className="text-[19px] font-bold mt-0.5 leading-tight text-brand">
             Add a patient
           </div>
         </button>

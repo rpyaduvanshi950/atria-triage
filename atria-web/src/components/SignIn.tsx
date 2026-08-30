@@ -64,8 +64,25 @@ export function SignIn() {
      * it. A hardcoded subtraction was off by exactly the banner height, and
      * would go wrong again the moment the banner changed.
      */
-    <div className="flex-1 flex items-center justify-center px-4 py-8">
-      <div className="w-full max-w-[440px] bg-card border border-line rounded-xl p-7">
+    <div className="relative flex-1 flex items-center justify-center px-4 py-8">
+      {/*
+        * The board itself, behind the sign-in.
+        *
+        * Fixed rather than absolute so it covers the viewport instead of just
+        * this box, and decorative rather than informative — aria-hidden, no alt
+        * text, nothing here a person needs in order to sign in.
+        *
+        * Blurred and washed out on purpose. It is a screenshot of a working
+        * screen; left sharp it reads as the real board with a dialog stuck on
+        * top, and someone will try to click it.
+        */}
+      <div aria-hidden
+           className="fixed inset-0 bg-[url('/bg.png')] bg-cover bg-center" />
+      <div aria-hidden
+           className="fixed inset-0 bg-page/75 backdrop-blur-[6px]" />
+
+      <div className="relative w-full max-w-[440px] bg-card border border-line
+                      rounded-xl p-7 shadow-[0_16px_48px_-12px_rgba(33,52,58,.35)]">
         <h1 className="text-[22px] font-bold">Sign in to ATRIA</h1>
         <p className="text-[15px] text-ink2 mt-1.5">
           Every assessment and sign-off is recorded against the person who made
