@@ -112,10 +112,28 @@ def test_missing_vitals_are_surfaced_not_hidden(scorer):
     assert "sbp" in " ".join(row["missing"]) or row["needs_measurement"]
 
 
-def test_awaiting_sorts_above_everything(played):
-    states = [r["state"] for r in played.snapshot()["rows"]]
-    if "AWAITING" in states:
-        assert states.index("AWAITING") == 0
+def test_a_patient_needing_attention_is_ranked_there_by_their_band(played):
+    """
+    Replaces an assertion that AWAITING sorted above everything regardless of
+    band, which is what made the board disagree with the ratings printed on it.
+
+    The guarantee is the same and stronger: Layer 0 gives anyone who needs
+    attention first a band that puts them there — a red flag is band 1, an
+    abstention band 2 — so the ordering follows the rating and the rating
+    already carries the urgency. Sorting on the state as well applied it twice.
+    """
+    rows = [r for r in played.snapshot()["rows"] if r["state"] != "IN TREATMENT"]
+    if not rows:
+        return
+
+    bands = [r["band"] for r in rows]
+    assert bands == sorted(bands), "the board must follow its own ratings"
+
+    for r in rows:
+        if r["red_flag"]:
+            assert r["band"] == 1, "a fired rule must be band 1"
+        elif r["abstained"]:
+            assert r["band"] <= 2, "an unknown patient goes ahead of the cleared"
 
 
 def test_scoring_stays_under_the_latency_budget(played):
@@ -404,3 +422,56 @@ def test_a_red_flag_is_named_as_the_reason_it_is_first():
         pytest.skip("no red flag in this fixture")
     why = flagged[0].rank_because(q.now)
     assert any(p.red_flag in w for p in flagged[:1] for w in why)
+
+
+def test_the_board_is_ordered_by_the_rating_it_prints():
+    """
+    The sort used to lift every AWAITING patient above the rating, so a band 4
+    could sit above a band 2 and the list stopped agreeing with the numbers on
+    it. Anything that genuinely needs attention first already gets a band from
+    Layer 0 for it — a red flag is band 1, an abstention band 2 — so sorting on
+    the state as well applied that twice.
+    """
+    q = _engine_with_patients(n=16)
+    bands = [r["band"] for r in q.snapshot()["rows"]
+             if r["state"] != "IN TREATMENT"]
+    assert bands == sorted(bands), f"board disagrees with its own ratings: {bands}"
+
+
+def test_the_model_is_held_but_the_safety_rules_are_not():
+    """
+    A rating that moves on every reading is unreadable, so Layer 1 is throttled.
+    Layer 0 is deliberately outside that: a red flag is a measured threshold and
+    must fire on the reading that crosses it, not on the next one that happens
+    to fall after a timer.
+    """
+    import pandas as pd
+    from service.clock import Event
+    from service.queue import RESCORE_INTERVAL
+
+    q = _engine_with_patients(n=4)
+    t = pd.Timestamp("2026-01-01 09:00")
+    q.on_arrival(Event(at=t, kind="arrival", stay_id=77, payload={
+        "age": 60, "chiefcomplaint": "chest pain", "o2sat": 97, "sbp": 130,
+        "heartrate": 80, "resprate": 16, "temperature": 98.4}))
+    p = q.patients[77]
+    scored_at = p.last_scored
+
+    def reading(offset_s, **vitals):
+        at = t + pd.Timedelta(seconds=offset_s)
+        q.on_vitals(Event(at=at, kind="vitals", stay_id=77,
+                          payload={"stay_id": 77, "charttime": at, **vitals}))
+
+    reading(2, o2sat=96, sbp=128, heartrate=84, resprate=17, temperature=98.4)
+    assert p.last_scored == scored_at, "the model ran again inside the hold"
+
+    reading(int(RESCORE_INTERVAL.total_seconds()) + 2,
+            o2sat=95, sbp=126, heartrate=86, resprate=18, temperature=98.4)
+    assert p.last_scored != scored_at, "the model never ran again"
+
+    # and a red flag arriving inside a fresh hold window still fires at once
+    held_at = p.last_scored
+    reading(int(RESCORE_INTERVAL.total_seconds()) + 4,
+            o2sat=84, sbp=126, heartrate=86, resprate=18, temperature=98.4)
+    assert p.last_scored == held_at, "precondition: still inside the hold"
+    assert p.red_flag and "RF02" in p.red_flag, "a red flag was delayed by the hold"

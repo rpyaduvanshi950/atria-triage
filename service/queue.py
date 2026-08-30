@@ -25,6 +25,11 @@ AVAILABLE_FIELDS = {*VITAL_FIELDS, "age"}
 # priority waiting patient is taken through. Without this the queue only ever
 # grows, waits climb without bound, and queue aging escalates everyone to band 1
 # — which is a property of the simulation, not of the triage logic.
+#: How long a patient's Layer 1 rating is held before the model may move it.
+#: Simulated time, so it scales with the replay: at the demo's 30x this is a few
+#: real seconds. Layer 0 is never held.
+RESCORE_INTERVAL = pd.Timedelta(seconds=10)
+
 TREATMENT_SLOTS = 3
 
 # Roughly how long treatment takes, by the band they were taken at (minutes).
@@ -94,6 +99,8 @@ class Patient:
     held_for_assessment: bool = False
     abstain_reason: str = ""
     diagnostic_confidence: str = "HIGH"
+    #: When Layer 1 last scored this patient. Layer 0 is not throttled.
+    last_scored: pd.Timestamp | None = None
     #: TreeSHAP attributions for this patient's Layer 1 score: what the model
     #: weighed, which can differ from the pathway description above.
     attributions: tuple = ()
@@ -266,8 +273,29 @@ class QueueEngine:
         patient.hard_stop = False
         patient.abstained = bool(g.ambiguous)
         patient.abstain_reason = g.explain() if g.ambiguous else ""
+        if g.ambiguous:
+            # RF12. An abstention is not a low-acuity finding: we do not know
+            # what this patient is, so they go ahead of everyone already
+            # cleared. The band was being set for a hard stop and not for an
+            # ambiguous one, which left them sitting mid-queue while the board
+            # said ATRIA could not classify them.
+            band = apply(band, g.priority, Source.RULE)
+            patient.state = "AWAITING"
 
-        if self.scorer is not None and not self.degraded:
+        # A rating that moves on every reading is unreadable, and re-running the
+        # model on each one buys nothing: the vitals feeding it barely differ
+        # seconds apart. Layer 1 is held to once per RESCORE_INTERVAL per
+        # patient.
+        #
+        # Layer 0 above is deliberately outside this. A red flag is a measured
+        # threshold and must fire on the reading that crosses it, not on the
+        # next one that happens to fall after a timer. Throttling safety to
+        # steady a display would be the wrong trade every time.
+        due = (patient.last_scored is None or self.now is None
+               or (self.now - patient.last_scored) >= RESCORE_INTERVAL)
+
+        if self.scorer is not None and not self.degraded and due:
+            patient.last_scored = self.now
             row = {**vitals, "age": patient.age,
                    "pain": _num(extra.get("pain")),
                    "shock_index": _si(vitals), "pulse_pressure": _pp(vitals),
@@ -606,8 +634,15 @@ class QueueEngine:
             r["rank"] = rk.rank if rk else 10_000
             r["rank_modifiers"] = list(rk.reasons) if rk else []
 
-        rows.sort(key=lambda r: (r["state"] == "IN TREATMENT",
-                                 r["state"] != "AWAITING", r["rank"]))
+        # Order by ATRIA's rating, and nothing else.
+        #
+        # The middle term used to be `state != "AWAITING"`, which lifted every
+        # awaiting patient above the rating regardless of band — so a band 4
+        # sat above a band 2 and the list stopped agreeing with the numbers
+        # printed on it. Anything that genuinely needs attention first already
+        # gets a band from Layer 0 for it: a red flag is band 1, an abstention
+        # is band 2. Sorting on the state as well applied that twice.
+        rows.sort(key=lambda r: (r["state"] == "IN TREATMENT", r["rank"]))
         lanes = {name: sum(1 for r in rows
                            if r["lane"] == name and r["state"] != "IN TREATMENT")
                  for name in LANES}
