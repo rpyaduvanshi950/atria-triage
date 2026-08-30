@@ -7,7 +7,7 @@ who is *becoming* sickest is seen sooner. It supports the triage nurse; it does
 not diagnose, does not prescribe, and cannot lower anyone's priority on its own.
 
 Accenture Innovation Challenge 2026 · Round 2, Track 2 (PatientTriage.ai)
-Team **Digital Ninja** — Pushpender, Shagun, Atit · IIT Kanpur
+Team **Digital Ninja** — Pushpender, Shagun · IIT Kanpur
 
 |                                  |                                                 |
 | -------------------------------- | ----------------------------------------------- |
