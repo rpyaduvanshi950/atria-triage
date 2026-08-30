@@ -37,6 +37,14 @@ test.md
 # notes. Useful while building, not part of what is being submitted.
 docsfromsatyansh/
 
+# Written material kept local: the demo script, the hosting walkthrough, the
+# generated results and figures, the plain-words PDF. The README carries what a
+# reader of the repository needs; these are working documents for the team.
+#
+# `make report` regenerates docs/results.md and the figures, so nothing here is
+# lost by not tracking it.
+docs/
+
 # Agent instruction files. AGENTS.md is rewritten by `next dev` on every run,
 # so ignoring it is the only way to keep it out of a diff for good.
 CLAUDE.md
