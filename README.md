@@ -281,10 +281,17 @@ tells a reviewer nothing.
 | **Isfahan ED**                 | 143,140 stays                       | Priors for the generator.**Excluded from training** (§8) | No — CC BY 4.0                                               |
 | **Synthetic generator**        | on demand                           | Paediatric and surge cases; moving vitals                       | Yes,[`data/loaders/synthetic.py`](data/loaders/synthetic.py) |
 
-Raw data is gitignored: all three are re-fetchable, and keeping them out avoids
-any redistribution question. `make status` shows which are present. **The app
-runs without any of them** — the frozen model is committed and the demo board
-uses the synthetic generator.
+**No dataset is included in this repository.** All three are gitignored: they
+are freely re-fetchable from their sources, and not redistributing them avoids
+any licence question. What is committed is the *code* that reads them
+([`data/loaders/`](data/loaders/)), a 1 KB file of aggregate priors, and the
+extraction script.
+
+**The application runs without any of them.** The trained model is committed as
+a frozen artifact with its manifest, and the demo board generates its own
+patients. `make status` shows which sources are present on your machine;
+[`data/README.md`](data/README.md) records provenance, licence and attribution
+for each.
 
 ---
 

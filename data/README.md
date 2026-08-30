@@ -1,7 +1,22 @@
 # Datasets — ATRIA (AIC 2026, Round 2, Track 2)
 
-Three open datasets, downloaded 2026-08-21. None requires credentialing, a data use agreement, or anyone's approval.
-All carry licence obligations — read the Attribution section before publishing anything.
+**No dataset is included in this repository.** All three are gitignored: they
+are freely re-fetchable from the sources below, and not redistributing them
+avoids any licence question. This file records what was used, where it came
+from, and what it was used for.
+
+Run `make status` to see which are present on your machine. The application
+runs without any of them — the trained model is committed as a frozen artifact,
+and the demo board uses the synthetic generator.
+
+Three open datasets, downloaded 2026-08-21. None requires credentialing, a data
+use agreement, or anyone's approval. All carry licence obligations — read the
+Attribution section before publishing anything.
+
+The MIMIC-IV-ED demo is distributed under the **Open Database License (ODbL)
+v1.0** and the PhysioNet open-data terms; its licence text ships with the
+download rather than being copied here, since the data itself is not in this
+repository.
 
 ---
 
