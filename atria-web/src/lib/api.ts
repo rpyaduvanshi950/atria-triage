@@ -9,8 +9,18 @@ import type {
   AssessmentView, Forecast, History, Logs, ShadowReport, Snapshot,
 } from "@/types/atria";
 
-const BASE =
-  process.env.NEXT_PUBLIC_ATRIA_API ?? "http://127.0.0.1:8000";
+/**
+ * The engine's absolute address. Used only for the websocket, which cannot be
+ * proxied through Vercel and does not need to be.
+ */
+const ENGINE = process.env.NEXT_PUBLIC_ATRIA_API ?? "http://127.0.0.1:8000";
+
+/**
+ * HTTP calls go to this app's own origin and are rewritten to the engine by
+ * next.config.ts. Same-origin means no CORS, which means the engine's
+ * allow-list can stay narrow instead of growing a line for every deployment.
+ */
+const BASE = "";
 
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) {
@@ -201,6 +211,6 @@ export const api = {
   // Browsers cannot set headers on a WebSocket, so the token rides in the query
   // string. Same signed token, checked the same way on the other end.
   wsUrl: () =>
-    `${BASE.replace(/^http/, "ws")}/ws` +
+    `${ENGINE.replace(/^http/, "ws")}/ws` +
     (session.token ? `?token=${encodeURIComponent(session.token)}` : ""),
 };
