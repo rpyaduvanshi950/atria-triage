@@ -33,8 +33,14 @@ __pycache__/
 # personal notes / transcripts — not part of the deliverable
 test.md
 
-# voice notes — personal recordings, not deliverables
-docsfromsatyansh/*.ogg
+# Internal working material: the team's own PRD, reference mockups and voice
+# notes. Useful while building, not part of what is being submitted.
+docsfromsatyansh/
+
+# Agent instruction files. AGENTS.md is rewritten by `next dev` on every run,
+# so ignoring it is the only way to keep it out of a diff for good.
+CLAUDE.md
+AGENTS.md
 
 # --- Next.js client ---------------------------------------------------------
 atria-web/node_modules/

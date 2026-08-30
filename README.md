@@ -6,417 +6,502 @@ Emergency-department triage that reorders attention continuously, so the patient
 who is *becoming* sickest is seen sooner. It supports the triage nurse; it does
 not diagnose, does not prescribe, and cannot lower anyone's priority on its own.
 
-Accenture Innovation Challenge 2026, Round 2, Track 2 (PatientTriage.ai).
-Team **Digital Ninja** — Pushpender, Shagun, Atit · IIT Kanpur.
-
----
-
-## For the pitch — everything on one screen
-
-**The problem.** Triage is a one-time judgement recorded on a patient who keeps
-changing. Across 5.3M encounters, ESI was wrong 32.2% of the time and caught only
-65.9% of patients who went on to need a life-saving intervention. Delay converts
-that error into death: one extra death per 82 patients held 6–8 hours.
-
-**The question we build for.** Not *"who is sickest now?"* but **"who is becoming
-sickest while nobody is looking?"**
-
-**The answer.** A queue that re-ranks itself continuously from vitals already
-being recorded — that can escalate on its own, and can never de-escalate on its
-own.
-
-### The five things that make it different
-
-| | Why it matters |
-|---|---|
-| **The nurse decides first** | ATRIA's recommendation is *absent from the payload* until the nurse commits — enforced by the server with a one-time token, not hidden by CSS. Kills automation bias, and produces an independent human label to measure against |
-| **It refuses to answer** | Under 3 vitals: no score at all. Two pathways equally engaged: says it cannot classify. Both route to a human and go ahead of everyone already cleared |
-| **Two confidences, not one** | *How urgent* and *what is wrong* are different questions. A hypothermic trauma patient scores urgency HIGH, cause LOW — certain they are critical, honest we cannot say which organ is failing |
-| **Safety bands are absolute** | Waiting time and department load reorder patients *within* a priority, never across one. A maximally boosted priority 3 still sits below an untouched priority 2, and a test proves it |
-| **Every decision is reconstructable** | Hash-chained append-only log. Edit or delete anything and the chain breaks |
-
-### Three findings we did not expect
-
-**A dataset that encoded its own answer.** In 143,140 real Iranian records, 100%
-of the most-urgent patients had *zero* recorded vitals against 0.1% of the
-mid-urgency band — the sickest bypass the triage form. A model using
-missing-indicators would have scored beautifully by learning hospital paperwork.
-Excluded from training.
-
-**Our model read missing vitals as reassuring.** Blanking heart rate, respiratory
-rate or systolic *lowered* predicted risk — a silent undertriage path in a system
-that promises the opposite. Found by auditing, not assuming. Now clamped.
-
-**Our own gate was adult-calibrated.** It fired hypotension on a 3-year-old with
-a systolic of 88, which is normal at that age — the exact failure the brief
-names. Now age-banded on PALS.
-
-### The numbers
+Accenture Innovation Challenge 2026 · Round 2, Track 2 (PatientTriage.ai)
+Team **Digital Ninja** — Pushpender, Shagun, Atit · IIT Kanpur
 
 | | |
 |---|---|
-| Layer 1 | **AUC 0.809** on 560,486 real Yale encounters |
-| Published benchmark | 0.87 — *using the nurse's ESI and race, which we exclude* |
-| Price of independence | 0.859 with the nurse's ESI, 0.809 without |
-| Operating point | 95.0% sensitivity · 34.1% specificity · 5.0% undertriage |
-| Layer 2 on real patients | **32.2%** of later-admitted flagged vs **12.2%** discharged — a **+20.0 point** difference, 95% CI [+4.6, +31.2]. Median **164 min** lead |
-| Cross-site | Train on two hospitals, test on the third: within **±0.026** AUC |
-| Fairness | Worst-served group undertriaged 9.2% vs 4.0% → gap **5.3% → 2.1%** out of sample, inside the 5-point tolerance |
-| Latency | **p95 52 ms** under 3× surge, against a 400 ms budget |
-| Scale | ~7,650 lines of Python · 18 endpoints · **199 tests** |
+| **Live board** | https://atria-triage.vercel.app |
+| **Live engine / API docs** | https://atria-triage.onrender.com/docs |
+| **Source** | https://github.com/rpyaduvanshi950/atria-triage |
+| **Plain-words explainer (PDF)** | [`docs/pdf/ATRIA-explained.pdf`](docs/pdf/ATRIA-explained.pdf) |
+| **Demo video script** | [`docs/demo-script.md`](docs/demo-script.md) |
 
-### The one number to be honest about
-
-We score **below** the published benchmark on purpose. It reads the nurse's own
-ESI and uses race as a predictor; we refuse both. That costs ~0.05 AUC and buys a
-recommendation that can genuinely disagree with a nurse. A model already told the
-answer cannot contradict it, and the blind comparison built on it would be
-theatre.
-
-### What it deliberately will not do
-
-No diagnosis · no treatment advice · no autonomous downgrade · no silent failure.
-It changes **the order of attention**, nothing else. That boundary is what keeps
-it in the lower SaMD tier and what makes it deployable.
-
-### Demo script — four moments
-
-1. **A quiet patient climbs.** Someone at priority 3 drifts; twenty minutes later
-   they carry an arrow and nobody had re-checked them.
-2. **A blank field, handled honestly.** No reassuring default, no false alarm —
-   priority 2 and an instruction to measure.
-3. **You disagree with it.** Go *less* urgent and it blocks you until you say why.
-4. **Kill the model.** Layer 0 keeps gating, offline, and the board says so.
-
-`make scenarios` plays seven fixed cases with identical output every run — narrate
-the video against that, not the live board.
-
+> The hosted board runs on free tiers and sleeps after ~15 minutes idle. The
+> first request wakes it and takes about 50 seconds. Open the engine link first,
+> wait for it to answer, then open the board.
 
 ---
 
-## Quick start
+## Contents
+
+1. [The problem](#1-the-problem)
+2. [The solution](#2-the-solution)
+3. [Architecture](#3-architecture)
+4. [How each layer is implemented](#4-how-each-layer-is-implemented)
+5. [Key features](#5-key-features)
+6. [Data](#6-data)
+7. [Results](#7-results)
+8. [Three things we found by building it](#8-three-things-we-found-by-building-it)
+9. [Running it locally — step by step](#9-running-it-locally--step-by-step)
+10. [Deploying it](#10-deploying-it)
+11. [Repository layout](#11-repository-layout)
+12. [Testing](#12-testing)
+13. [Limitations, stated plainly](#13-limitations-stated-plainly)
+
+---
+
+## 1. The problem
+
+Triage happens once, at the door. A nurse assigns an Emergency Severity Index
+from 1 (resuscitate now) to 5 (can safely wait), and that number follows the
+patient into the waiting room and mostly stays there. The patient's condition
+does not.
+
+Two failures follow:
+
+- **People deteriorate unseen.** Someone stable at 09:00 can be in trouble by
+  09:40, and in a busy department nothing is systematically watching.
+- **The queue drifts to first-come-first-served**, which is not the same as
+  sickest-first.
+
+Across 5.3M encounters, ESI was wrong 32.2% of the time and caught only 65.9% of
+patients who went on to need a life-saving intervention. Delay converts that
+error into death: one extra death per 82 patients held 6–8 hours.
+
+## 2. The solution
+
+A **continuously re-ranking attention list**. ATRIA watches vital signs as they
+are re-taken and changes the order in which patients should be seen. Every
+decision stays with a human, and the record says who made it.
+
+> **In one sentence.** ATRIA turns triage from a decision made once into a
+> decision kept under review — while leaving every actual decision with a
+> clinician, and writing down who made it.
+
+---
+
+## 3. Architecture
+
+```
+                     ┌─────────────────────────────────────────┐
+  Vitals, arrivals   │  LAYER 0 · Safety rules      DECIDES    │
+  ───────────────────▶  11 cited thresholds, age-banded        │
+                     │  Runs first. No model can suppress it.  │
+                     └────────────────┬────────────────────────┘
+                                      ▼
+                     ┌─────────────────────────────────────────┐
+                     │  LAYER 1 · Acuity scorer    RECOMMENDS  │
+                     │  Gradient-boosted trees, 23 features    │
+                     │  Conformal confidence, per class        │
+                     └────────────────┬────────────────────────┘
+                                      ▼
+                     ┌─────────────────────────────────────────┐
+                     │  LAYER 2 · Trajectory      RE-ORDERS    │
+                     │  Deltas between readings, shock index   │
+                     │  Strict bands: no crossing a boundary   │
+                     └────────────────┬────────────────────────┘
+                                      ▼
+                     ┌─────────────────────────────────────────┐
+                     │  LAYER 3 · Human authority   DECIDES    │
+                     │  Blind assessment · hash-chained audit  │
+                     └────────────────┬────────────────────────┘
+                                      ▼
+        FastAPI + WebSocket ──▶ Next.js board / Streamlit board
+                                      │
+                             SQLite (append-only audit)
+```
+
+The important column is the last one: **which layers are allowed to decide
+anything.**
+
+| Layer | What it does | Authority |
+|---|---|---|
+| **0 — Safety rules** | Eleven rules with clinical citations. SpO₂ < 90. Systolic below the **age-banded** minimum. Active seizure. Stroke signs inside the thrombolysis window. | **Decides.** Forces priority 1; no model output can suppress it |
+| **1 — Acuity scorer** | The only trained model. 23 features available within five minutes of arrival | *Recommends* |
+| **2 — Trajectory** | Compares each reading against the previous ones — direction of travel, not the snapshot | *Re-orders* |
+| **3 — Human** | The nurse's workflow and a tamper-evident record | **Decides** |
+
+**Only Layer 1 contains a model.** Layers 0, 2 and 3 are ordinary deterministic
+code — fixed thresholds, arithmetic and a state machine. That was a choice: the
+parts that can force a patient to the front, refuse to answer, or record what a
+clinician did should be readable line by line by someone who does not trust
+machine learning.
+
+**The escalation ratchet.** Layers 0, 1 and 2 can all *raise* urgency. **None can
+lower it.** Only a clinician can, and it is recorded with their identity, reason
+code, model version and the input snapshot.
+
+### Technology
+
+| Part | Built with | Why |
+|---|---|---|
+| Clinical engine | Python 3.12, pandas, NumPy | Plain code with no framework around the safety logic |
+| Model | scikit-learn `HistGradientBoostingClassifier` | Handles missing values natively; each prediction is explainable by feature |
+| Safety rules | YAML with a citation per rule | A clinician can change a threshold without touching code |
+| API | FastAPI, uvicorn, WebSocket — 25 routes | Pushes on event rather than polling |
+| Board | Next.js 16, React 19, TypeScript, Tailwind 4 | The stack the PRD specifies; typed responses catch contract drift at build time |
+| Long queues | TanStack Virtual | 200+ patients at 60fps; only visible rows in the DOM |
+| Second board | Streamlit | Same engine, different shell — evidence the logic is UI-independent |
+| Audit store | SQLite | One portable file an auditor can take away; `UPDATE`/`DELETE` refused by trigger |
+| Auth | JWT (HS256), PBKDF2-SHA256 | Standard and boring; no password stored readably |
+| Interop | FHIR R4, read-only | Verified against the public HAPI sandbox |
+| Tests | pytest — 263 | Every safety rule above has a test that fails if broken |
+
+---
+
+## 4. How each layer is implemented
+
+### Layer 0 — the gate · [`layer0/`](layer0/)
+
+Thresholds live in [`layer0/rules.yaml`](layer0/rules.yaml), each row carrying
+its clinical source. The code reads the table; it does not contain the numbers.
+Age-dependent thresholds (systolic, respiratory rate) are looked up by band
+rather than assumed adult.
+
+**The gate returns three answers, not two:**
+
+| | |
+|---|---|
+| **Confirmed** | A rule fired on a value someone actually recorded → priority 1 |
+| **Cannot rule out** | Fired only because a missing vital was assumed worst-case → priority 2 **plus an instruction to measure it** |
+| **Not evaluable** | The source has no such column at all → skipped |
+
+The third matters more than it looks. No dataset here carries GCS; gating every
+patient on an assumed GCS of 3 would fire RF01 on all of them.
+
+**When it refuses to answer:**
+
+- **RF11 — hard stop.** Fewer than 3 of the 6 monitored vitals recorded. No
+  score at all. You cannot triage a sentence.
+- **RF12 — abstain.** Two pathways engaged with ≥ 0.75 overlap at ≥ 0.5
+  severity. It says it cannot classify rather than manufacturing an answer.
+
+Neither is a low-acuity finding. An unknown patient goes **ahead** of everyone
+already cleared (priority 2), routed to a clinician, and both are audited.
+
+### Layer 1 — the scorer · [`layer1/`](layer1/)
+
+Trained on **560,486 real Yale encounters**. Split three ways: fit, calibrate,
+test. Band cuts come from the risk distribution, not an arbitrary threshold.
+
+**The nurse's ESI and the patient's race are excluded from the inputs** — the
+first so the model can genuinely disagree with the nurse, the second because a
+model must not use race as a predictive shortcut.
+
+**Two confidences, not one.** *Urgency* confidence comes from a Mondrian
+(class-conditional) conformal set with a ≥95% guarantee **per class**; a marginal
+guarantee is met by being reliable about common cases and unreliable about rare
+ones, and the rare ones here are the critical patients. *Cause* confidence comes
+from how much the three failure pathways overlap.
+
+**Never scores missingness as reassuring** — see §8.
+
+### Layer 2 — trajectory · [`layer2/`](layer2/)
+
+Arithmetic on the last few readings:
+
+| Signal | Threshold |
+|---|---|
+| SpO₂ falling | ≥ 3 points |
+| Systolic falling | ≥ 15 |
+| Heart rate rising | ≥ 20 |
+| Respiratory rate rising | ≥ 6 |
+| Shock index (HR/SBP) | ≥ 0.9 |
+
+Re-assessment is due at **5 / 15 / 45 / 90 / 180 minutes** for priorities 1–5.
+Being overdue forces a re-look; it does **not** raise priority. Waiting is not
+deterioration. Only at 3× the safe wait does it escalate by one, as a backstop.
+
+**Bands are strict.** Operational pressure and waiting time reorder patients
+*within* a band and can never cross a boundary. A maximally boosted priority 3
+still ranks below an untouched priority 2, and a test proves it.
+
+### Layer 3 — workflow and record · [`layer3/`](layer3/)
+
+A three-stage machine: awaiting nurse → compared → signed. Plus a hash chain
+where **each entry embeds the hash of the one before it**, stored in SQLite and
+rebuilt from disk on startup. The database refuses `UPDATE` and `DELETE` by
+trigger, so tampering fails when attempted rather than being caught later by a
+check nobody ran.
+
+---
+
+## 5. Key features
+
+### The blind nurse-first assessment — the idea the design rests on
+
+**The nurse decides first. ATRIA speaks second.**
+
+The recommendation is not on the page until the nurse commits — not hidden by
+CSS, **absent from the payload**. The server returns 409 if asked early and
+issues a **single-use token** when the nurse's answer is stored, so the ordering
+is a server invariant rather than a client convention.
+
+Two reasons, and the second is the one people miss:
+
+- **Anchoring.** Show a clinician a number first and they converge on it. That
+  is not a failure of diligence, it is how attention works under load.
+- **It creates evidence.** Because the nurse always answers blind, every
+  encounter produces an independent human label — the only way to know whether
+  the model adds anything.
+
+**Measured cost: 0.05 AUC.** Letting the model read the nurse's ESI lifts it
+from 0.809 to 0.859. We give that up deliberately and put it on the slide.
+
+**What happens after the reveal:**
+
+| The nurse chose | What happens | Reason required |
+|---|---|---|
+| Same as ATRIA | Confirm and move on | No |
+| **More** urgent | Stands, difference logged | No — escalation is never questioned |
+| **Less** urgent | Blocked until justified | **Yes** |
+| Anything, safety rule fired | Blocked, charge nurse notified | **Yes** |
+| Anything, ATRIA abstained | Blocked until justified | **Yes** |
+
+Choosing "something else" as a reason requires free text: *"other"* on its own
+tells a reviewer nothing.
+
+### Everything else
+
+- **Triage gates treatment.** A bay only takes a patient who has been signed
+  off. Nobody is treated before they are triaged.
+- **Two board views** — Attention order and Treatment bay, the latter ordered by
+  when care began so it does not reshuffle under a nurse working down it.
+- **Colour-coded priorities** — the five colours an emergency department already
+  uses. Every foreground clears 4.5:1 contrast.
+- **The queue settles every 20 seconds** so it does not move while being read —
+  but **anything that makes a patient more urgent appears immediately.**
+- **Ranking is explained** per patient, in the order the sort actually applies.
+- **Logs in two views** — what ATRIA did, and what people did about it. Filters
+  over one chain, never two records.
+- **Roles**: nurse, charge nurse, clinician, flow coordinator, clinical
+  governance, admin. The auditor cannot write; ops cannot lower a priority.
+- **Shadow mode** — every layer runs, nothing acts, disagreements go to the
+  trail. Phase 1 of a real deployment.
+- **Degraded mode** — kill the model and Layer 0 keeps gating.
+- **Check a patient in by hand**, with or without vitals.
+
+---
+
+## 6. Data
+
+| Source | Size | Used for | In repo |
+|---|---|---|---|
+| **Yale ED** (Hong et al. 2018) | 560,486 encounters, 3 hospitals | Trains and validates Layer 1 | No — re-fetchable |
+| **MIMIC-IV-ED demo** | 222 stays, 159 with repeated vitals | Validates Layer 2 | No — ODbL |
+| **Isfahan ED** | 143,140 stays | Priors for the generator. **Excluded from training** (§8) | No — CC BY 4.0 |
+| **Synthetic generator** | on demand | Paediatric and surge cases; moving vitals | Yes, [`data/loaders/synthetic.py`](data/loaders/synthetic.py) |
+
+Raw data is gitignored: all three are re-fetchable, and keeping them out avoids
+any redistribution question. `make status` shows which are present. **The app
+runs without any of them** — the frozen model is committed and the demo board
+uses the synthetic generator.
+
+---
+
+## 7. Results
+
+Every number is produced by a script in [`eval/`](eval/) and regenerated by
+`make report`. None is typed by hand. Full output: [`docs/results.md`](docs/results.md).
+
+| Metric | Result |
+|---|---|
+| **Layer 1 discrimination** | **AUC 0.809** on 560,486 real encounters (benchmark 0.87 uses nurse ESI + race, which we exclude) |
+| **Operating point** | 95.0% sensitivity / 34.1% specificity, tuned to the ACS ≤5% undertriage standard |
+| **Layer 2 lead time** | Flags **32.2%** of later-admitted vs **12.2%** discharged — **+20.0 points, 95% CI [+4.6, +31.2]**. Median **164 min** warning, CI [111, 258] |
+| **Fairness** | Worst subgroup gap **5.3% → 2.1%** out of sample, 95% CI [0.4, 4.3] — inside our 5-point tolerance |
+| **Conformal coverage** | ≥95% **per class**, not on average |
+| **Latency** | **p95 52 ms** under 3× surge locally; **p95 10.8 ms** on the hosted engine |
+| **Soak test** | 25 shifts, 434 patients, 565 full workflows, 0 failures |
+| **Tests** | **263 passing** |
+
+---
+
+## 8. Three things we found by building it
+
+None was in any plan. Each is a way the system could have quietly harmed
+someone.
+
+**The dataset that would have taught it the wrong lesson.** In the Isfahan data,
+**100% of the most critical patients have no recorded vitals** — the sickest
+bypass the triage form. A model using missing-indicators would learn that *an
+empty form means a dying patient*: excellent scores, useless in any hospital with
+different paperwork. We excluded it from training and kept it for priors.
+
+**The model read missing vitals as reassuring.** Blanking each vital and
+measuring the shift showed that a missing heart rate, respiratory rate or
+systolic *lowered* predicted risk — a silent undertriage path that targets
+exactly the patient nobody has got round to measuring. Scores are now clamped so
+an unrecorded vital can never score better than the population median.
+
+**Our own safety rules were adult-calibrated.** They fired hypotension on a
+three-year-old at SBP 88, which is normal at that age. The layer built to
+protect people was itself wrong about children. It now uses PALS age bands.
+
+---
+
+## 9. Running it locally — step by step
+
+### Prerequisites
+
+- Python **3.12**, Node **20+**, and `make`
+- No dataset downloads required
+
+### Step 1 — install
 
 ```bash
 git clone https://github.com/rpyaduvanshi950/atria-triage.git
 cd atria-triage
-make setup          # one-off: creates .venv, installs dependencies
-make streamlit      # the board at http://localhost:8501
+make setup                 # creates .venv and installs dependencies
 ```
 
-The board loads the frozen model in `ml/models/`, so it is up in a second or
-two. If that artifact is missing it trains on startup instead and the board
-reads *"waiting for the first arrival…"* for about ten seconds — not a hang.
-`make freeze` pins a fresh one.
-
-Three other entry points:
+### Step 2 — verify the build
 
 ```bash
-make demo           # the FastAPI engine at http://127.0.0.1:8000
-make web            # the Next.js client at http://localhost:3000 (needs make demo)
-make scenarios      # seven deterministic demo cases, printed
+make test                  # 263 tests, about 5 minutes
 ```
 
-`make demo` and `make streamlit` are the same engine behind different shells —
-the FastAPI build pushes over a websocket, the Streamlit build redraws inside an
-auto-refreshing fragment. `make scenarios` is what you narrate a video against,
-because it produces identical output every run.
+### Step 3 — start the engine
 
-**Signing in.** The FastAPI build and the Next.js client require an account —
-every assessment and override is recorded against the person who made it. Six
-demo accounts are listed on the sign-in screen; each password is the username.
-Pick *Triage nurse* to see the board as a nurse does, or *Administrator* for
-everything. `ATRIA_AUTH=off make demo` disables it for a projector demo.
+```bash
+make demo                  # FastAPI on http://127.0.0.1:8000
+```
 
-`make help` lists everything.
+It prints what it is running:
 
----
+```
+ATRIA: auth on with seeded demo accounts (nurse.demo, …); password = username
+ATRIA: audit trail -> data/atria_audit.db
+ATRIA: demo shift = 100 patients over 3h at 30x (~6 min real), 5 bays, seed 7
+```
 
-## What it does
+### Step 4 — start the board, in a second terminal
 
-The nurse commits to an ESI **before** ATRIA's recommendation exists on their
-screen. Only then is it revealed, and the two are compared. Meanwhile the queue
-re-ranks itself from vitals as they arrive, and patients who are held too long,
-who worsen, or whose data is incomplete are surfaced rather than buried.
+```bash
+make web                   # Next.js on http://localhost:3000
+```
 
-Four layers, each with a different amount of authority:
+Open **http://localhost:3000**. The sign-in fields are pre-filled with
+`nurse.demo` / `nurse.demo` because the seeded accounts are live locally.
 
-| Layer | Module | Responsibility | Authority |
-|---|---|---|---|
-| **Layer 0** | `layer0/` | Deterministic red-flag gate — 11 cited rules, age-banded, runs with no model and no network | **Decides** |
-| **Layer 1** | `layer1/` | Acuity scorer, conformal confidence, three-pathway model | *Recommends* |
-| **Layer 2** | `layer2/` | Re-ranks from vital trajectories inside strict safety bands | *Re-orders* |
-| **Layer 3** | `layer3/` | Blind assessment workflow + hash-chained audit log | **Decides** |
-
-**Only Layer 1 contains a trained model.** Layers 0, 2 and 3 are entirely
-deterministic — cited thresholds, arithmetic on vital deltas, and a state
-machine. That is a design choice, not a gap: the parts that can force a patient
-to the top of the queue, or refuse to answer, or record what a clinician did,
-should be inspectable line by line rather than learned.
-
-The learned model can never suppress Layer 0, and no machine source can lower a
-priority. Both are enforced by tests, not by convention.
-
----
-
-## The ideas worth reading the code for
-
-### Blind nurse-first assessment — `layer3/workflow.py`
-
-The recommendation is **absent from the payload** before the nurse chooses, not
-merely hidden by CSS, so it cannot leak through the DOM or a network tab.
-
-Show a clinician a number first and they converge on it. Automation bias is not
-a failure of diligence, it is how attention works under load. Hiding the
-recommendation until the human commits is the cheapest known defence — and it
-means every encounter produces an independent human label, which is the only
-way to tell whether the model is adding anything.
-
-| outcome | reason required |
-|---|---|
-| match | no |
-| nurse **more** urgent than ATRIA | no — logged; the nurse's view stands |
-| nurse **less** urgent than ATRIA | **yes**, before sign-off |
-| Layer 0 guardrail active | **yes**, plus charge-nurse escalation |
-| ATRIA abstained | **yes**, if signing off before the gap is resolved |
-
-Reporting a change clears the sign-off and starts a fresh blind cycle. The old
-recommendation is discarded, never carried over.
-
-### The model may not read the nurse's answer — `layer1/features.py`
-
-Adding the nurse's ESI as a feature lifts AUC from **0.809 to 0.859**. We
-exclude it anyway. A model already told the answer cannot meaningfully disagree
-with it, and the comparison above would be theatre.
-
-Race is excluded for a different reason: it is a social construct standing in
-for exposure and access, and using it as a predictor is precisely how Obermeyer
-et al. (2019) describes algorithms encoding inequity. It is **audited, never
-predicted from**. Sex stays — it carries genuine physiological signal.
-
-### Three outcomes from the gate, not two — `layer0/engine.py`
-
-- **confirmed** — a rule fired on values someone actually recorded → band 1
-- **cannot rule out** — fires only on an assumed-worst missing vital → band 2
-  and an instruction to measure it
-- **not evaluable** — the source has no such column at all
-
-The third matters more than it looks: no source here carries GCS, and gating
-every patient on an assumed GCS of 3 fires that rule on all of them.
-
-### When the system refuses to answer
-
-| Rule | Behaviour |
-|---|---|
-| **RF11** hard stop | Fewer than 3 monitored vitals. No score at all — you cannot triage a sentence |
-| **RF12** abstain | Two pathways engaged at near-equal severity. It says it cannot classify rather than manufacturing an answer |
-
-Neither is a low-acuity finding: an unknown patient goes ahead of everyone
-already cleared. Both route to a clinician and both hit the audit log.
-
-### The three atria mortis — `layer1/pathways.py`
-
-Every acute presentation kills through one of three gates: the lungs, the heart,
-the brain. Each is monitored by four or five parameters, weighted by how
-*specific* they are — weighting shared vitals equally makes all three gates light
-up on any sick patient, which destroys the point.
-
-This buys two things a single acuity score cannot express. **Diagnostic
-uncertainty, separate from triage uncertainty** — a hypothermic trauma patient
-scores triage confidence HIGH and diagnostic confidence LOW: certain they are
-critical, honest that we cannot say which gate is closing. And **competing
-pathologies** — hypothermia plus shock is flagged as a *treatment conflict*,
-because a vasopressor constricts already-constricted vessels and drives
-necrosis. ATRIA does not choose the drug; it says the two conflict and routes to
-a human.
-
-### Safety bands are strict — `layer2/ranking.py`
-
-Operational pressure and waiting time reorder patients *within* a clinical band
-and may never move one across a boundary. Bands are explicit and sorted
-lexicographically rather than by large numeric offsets — offsets are the usual
-trick and they work right up until someone adds a modifier bigger than the gap,
-at which point the invariant fails silently.
-
-A test proves a maximally boosted ESI 3 still ranks below an untouched ESI 2.
-
----
-
-## What has been measured
-
-Every figure below is regenerated by `make report`, which writes
-[`docs/results.md`](docs/results.md) and the deck figures from live code. Nothing
-is typed by hand, so the slides cannot drift.
-
-| Measure | Result |
-|---|---|
-| **Layer 1 vs the published benchmark** | **AUC 0.809** on 560,486 real Yale encounters. Hong et al. (2018) report 0.87 — using the nurse's ESI and race, both of which we exclude |
-| The price of independence | 0.859 with the nurse's ESI, 0.809 without |
-| Operating point | 95.0% sensitivity, 34.1% specificity, 5.0% undertriage — tuned to the ACS ≤5% standard, not to accuracy |
-| Cross-site | Train on two hospitals, test on the third: unseen-site AUC within ±0.026 |
-| Racial disparity | "Other" undertriaged at 9.2% against 4.0% for White. Removing race from the model cut the gap 8.3 → 5.2 points on its own; subgroup-conditional calibration takes the sensitivity gap to **2.1%** (95% CI [0.4, 4.3]), fitted on half the data and measured on the other half |
-| Layer 2 on real trajectories | 32.2% of later-admitted flagged vs 12.2% of discharged — **+20.0 points, 95% CI [+4.6, +31.2]**, so the difference is real at this sample size. Median **164 min** lead, CI [111, 258] (159 MIMIC stays) |
-| Conformal coverage | ≥95% **per class**, calibrated on held-out data |
-| Latency | p95 **52 ms** under 3× surge, against a 400 ms budget |
-
-### Three things we found by building
-
-**A dataset that encoded its own answer.** In 143,140 Isfahan records, 100% of
-the most-urgent patients had zero recorded vitals against 0.1% of the
-mid-urgency band. A model using missing-indicators would have scored beautifully
-by learning hospital paperwork. Excluded from training.
-
-**A model that read missing vitals as reassuring.** Blanking HR, RR or systolic
-*lowered* predicted risk — a silent undertriage path. Found by auditing, not
-assuming; now clamped so an unrecorded vital can never score better than an
-average one.
-
-**Our own gate, adult-calibrated.** It fired hypotension on a 3-year-old with a
-systolic of 88, which is normal at that age — the exact failure the brief names.
-Thresholds are now age-banded on PALS.
-
----
-
-## Data
-
-Three open datasets, no credentialing. See **[`data/README.md`](data/README.md)**
-for provenance and licences — **attribution is a licence condition for all
-three**, not a courtesy.
-
-| Source | Role | State |
+| Account | Password | Role |
 |---|---|---|
-| Yale ED — 560,486 visits, 3 hospitals | Trains and validates Layer 1 | extracted |
-| MIMIC-IV-ED Demo — 222 stays | Layer 2 trajectories, schema truth | ready |
-| Isfahan ED — 143,140 stays | Generator priors + the leakage case study | ready, **not trainable** |
-| Synthetic generator | Paediatrics, surge, deterioration | fitted to real Isfahan priors |
+| `nurse.demo` | `nurse.demo` | Triage nurse |
+| `charge.demo` | `charge.demo` | Charge nurse — can open and close bays |
+| `doc.demo` | `doc.demo` | Clinician — can lower a priority |
+| `audit.demo` | `audit.demo` | Clinical governance — read-only |
+| `admin.demo` | `admin.demo` | Everything, including shadow mode |
 
-Isfahan is marked non-trainable in code: `Dataset.require_trainable()` raises
-`LeakageError` if anyone tries. No raw data is tracked in git; the deployed app
-reads precomputed aggregate priors from `data/isfahan_priors.json`.
-
----
-
-## Layout
-
-```
-contracts/     schema.py — the shared column contract; change by consensus only
-data/
-  loaders/     yale · mimic_demo · isfahan · synthetic, all behind one interface
-  README.md    provenance, licences, attribution duties, known traps
-layer0/        engine.py + rules.yaml — 11 cited rules, age-banded thresholds
-layer1/        features · model · conformal · pathways · interactions · verify · explain
-layer2/        ranking (safety bands) · trajectory (deltas) · ratchet (the invariant)
-layer3/        workflow (blind assessment) · audit (hash-chained log)
-service/       queue · clock · forecast · decision_window · fhir · app (FastAPI)
-dashboard/     index.html (the board) · guide.html (served at /guide) · NOTES.md
-streamlit_app.py   three tabs: Assessment · Operations & Flow · History
-atria-web/     Next.js client — typed, virtualisable, keyboard-first
-eval/          fairness · cross_site · lead_time · latency · figures · report
-scenarios/     seven seeded demo cases + runner
-tests/         199 tests across 14 files
-docs/          pitch pack, business proposal, regulatory position, results, figures
-Makefile       every command
-```
-
----
-
-## Commands
+### Every command
 
 | Command | Does |
 |---|---|
 | `make setup` | venv and dependencies |
-| `make streamlit` | the Streamlit board on :8501 |
-| `make web` | the Next.js client on :3000 (run `make demo` alongside) |
-| `make demo` | the FastAPI build on :8000 |
-| `make scenarios` | seven deterministic demo cases |
-| `make test` | 263 tests |
-| `make freeze` | train once and pin the model artifact and manifest |
-| `make shadow` | run in shadow mode: every layer runs, nothing acts |
-| `make report` | regenerate `docs/results.md` and all figures |
+| `make test` | the full test suite |
+| `make demo` | the engine on :8000 |
+| `make web` | the Next.js board on :3000 |
+| `make streamlit` | the second board on :8501 |
+| `make shadow` | run in shadow mode: everything runs, nothing acts |
+| `make scenarios` | seven deterministic demo cases, printed |
+| `make freeze` | retrain and pin the model artifact + manifest |
+| `make report` | regenerate every measured number and figure |
 | `make eval` | latency, cross-site, Layer 2 lead time |
 | `make fairness` | subgroup audit and mitigation |
-| `make status` | which data sources are loadable |
-| `make extract-yale` | one-off Yale extraction (needs R) |
+| `make status` | which data sources are present |
+| `make explainer` | re-render the plain-words PDF |
 
----
+### Everything at once, with Docker
 
-## Running it like a deployment
+```bash
+docker compose up
+```
 
-Four things separate the demo from something a department could pilot, and all
-four are built. [`docs/deployment.md`](docs/deployment.md) covers each in full.
+Board on :3000, engine on :8000, Streamlit on :8501, audit trail on a named
+volume.
 
-| | | |
+### Configuration
+
+| Variable | Default | Purpose |
 |---|---|---|
-| **The audit trail survives a restart** | SQLite, chain rebuilt from disk, `UPDATE`/`DELETE` refused by the database itself | `ATRIA_DB=…` |
-| **Everyone signs in** | JWT bearer tokens, PBKDF2 passwords, six roles. The auditor cannot write; ops cannot lower a priority | on by default |
-| **The model is frozen** | A pinned artifact plus a manifest naming the training data, features, operating point and metrics. Stamped on every sign-off | `make freeze` |
-| **Shadow mode** | Every layer runs, nothing moves the board, disagreements go to the trail. Phase 1 of the roadmap | `make shadow` |
+| `ATRIA_SECRET` | random per process | JWT signing key. **Set it in production** or every restart signs everyone out |
+| `ATRIA_USERS` | seeded demo accounts | JSON of real accounts. Password **hashes** only |
+| `ATRIA_AUTH` | `on` | `off` disables sign-in entirely (projector demos) |
+| `ATRIA_DB` | in memory | Path to the SQLite audit trail |
+| `ATRIA_ALLOWED_ORIGINS` | localhost dev ports | CORS allow-list; never a wildcard |
+| `ATRIA_SHADOW` | off | Start in shadow mode |
+| `ATRIA_FHIR_BASE` | unset | A FHIR R4 server to read vitals from |
+| `ATRIA_DEMO_*` | see [`service/app.py`](service/app.py) | Patients, speed, seed, bays, headroom |
 
-Plus a read-only FHIR R4 client, verified against the public HAPI sandbox.
+Generate a password hash:
 
----
-
-## Deploying
-
-`streamlit_app.py` at the root, `requirements.txt` pinned to runtime
-dependencies, `runtime.txt` naming Python 3.12, dark theme in
-`.streamlit/config.toml`.
-
-1. <https://share.streamlit.io> → sign in with GitHub
-2. **New app** → this repo, branch `main`, main file `streamlit_app.py`
-3. Deploy
-
-Two things first. **The repo is private** — the free tier allows unlimited
-public apps but only one private, so either spend that slot or run
-`gh repo edit --visibility public`. And **no raw data is needed**: the deployed
-app reads aggregate priors precomputed from the real 143,582 encounters.
-
-Free tier gives 1 GB RAM and sleeps after 12 quiet hours, so wake it before a
-pitch. The scorer trains once per container behind `@st.cache_resource`.
+```bash
+.venv/bin/python -c "from service.auth import hash_password; print(hash_password('your-password'))"
+```
 
 ---
 
-## Documents
+## 10. Deploying it
 
-| Document | Contents |
-|---|---|
-| [`docs/how-it-works.md`](docs/how-it-works.md) | What the board is doing, every rule, and what the testing found |
-| [`docs/pitch.md`](docs/pitch.md) | Slide content and Q&A, built from the measured results |
-| [`docs/results.md`](docs/results.md) | Every measured number, regenerated by `make report` |
-| [`docs/business-proposal.md`](docs/business-proposal.md) | Problem framing, users, roadmap, risks |
-| [`docs/regulatory.md`](docs/regulatory.md) | Jurisdiction, SaMD class, liability, consent, bias |
-| [`docs/deck-changes.md`](docs/deck-changes.md) | What to fix in the pitch deck |
-| [`docs/pdf/ATRIA-explained.pdf`](docs/pdf/ATRIA-explained.pdf) | The whole system in plain words, 7 pages — written for the pitch, not for engineers |
-| [`docs/deployment.md`](docs/deployment.md) | Persistence, accounts and roles, the frozen model, shadow mode, FHIR |
-| [`docs/nextjs-migration.md`](docs/nextjs-migration.md) | The migration plan; phases 1–4 are built, phase 5 is not |
-| [`atria-web/README.md`](atria-web/README.md) | The Next.js client and the two rules for working on it |
-| [`dashboard/NOTES.md`](dashboard/NOTES.md) | Nurse board design decisions |
-| [`docsfromsatyansh/ATRIA PRD.pdf`](docsfromsatyansh) | The 55-page product spec this build is aligned to |
+Three pieces, three hosts. Full walkthrough: [`docs/hosting.md`](docs/hosting.md).
+
+| Piece | Host | Notes |
+|---|---|---|
+| Engine | **Render** | Docker. [`render.yaml`](render.yaml) describes the service. Needs WebSockets and a long-running process |
+| Board | **Vercel** | Root directory `atria-web`. Set `NEXT_PUBLIC_ATRIA_API` **before the first build** — Next inlines it |
+| Streamlit board | **Streamlit Cloud** | `streamlit_app.py`, optional |
+
+The board **proxies the API through itself** (`next.config.ts` rewrites), so the
+browser only ever talks to its own origin and the engine's CORS allow-list stays
+narrow instead of growing a line for every preview deployment. The WebSocket
+connects directly, because WebSockets are not subject to CORS.
 
 ---
 
-## Stated limitations
+## 11. Repository layout
 
-Read these before quoting any number.
+```
+layer0/          the red-flag gate — rules.yaml + engine.py
+layer1/          the acuity model, pathways, conformal prediction
+layer2/          trajectory analysis and safety-banded ranking
+layer3/          blind workflow, hash-chained audit, SQLite store
+service/         FastAPI app, queue engine, auth, shadow mode, FHIR client
+ml/              frozen model artifact + manifest, and the freeze script
+data/loaders/    one loader per source, all conforming to contracts/schema.py
+eval/            every measured number, plus figures and uncertainty helpers
+scenarios/       seven deterministic demo cases
+tests/           263 tests
+atria-web/       the Next.js board
+dashboard/       a plain-HTML board served by the engine itself
+docs/            how it works, results, hosting, demo script, the PDF
+```
 
-- The outcome label is hospital **admission**, a coarser acuity proxy than
-  ICU-transfer-or-death. No open ED dataset carries ICU timestamps.
-- Yale is **adults-only** with no pain score, so `is_paediatric` and `pain` are
-  dropped at fit time. Paediatric cases come from the synthetic generator.
-- Layer 2 is validated on **159 real trajectories**. Small, and now reported
-  that way: every rate carries a confidence interval, and the primary endpoint
-  clears zero (+20.0 points, CI [+4.6, +31.2]) while the sharper
-  critical-diagnosis endpoint does **not** (+5.1 points, CI [-12.9, +28.5], on
-  19 patients). The second result is a negative one and is published as such.
-- The fairness gap is **inside tolerance but not zero**: 2.1% after mitigation,
-  measured out of sample, 95% CI [0.4, 4.3] — a real difference, just a small
-  one. Four subgroups are too small for their own rate to be estimated to
-  better than the tolerance itself; they are excluded from the gap and named in
-  the report rather than dropped. The old figure of 5.0% was fitted and scored
-  on the same patients, which flattered the smallest groups most. The age
-  finding reversed between synthetic and real data, so fairness results do not
-  transfer between datasets.
-- The three atria mortis pathways are the **classical triad**, assumed. Round 1
-  names only "Cerebral Hypoxia"; if it defined the other two differently, change
-  `PATHWAYS` and nothing else moves.
-- **Every threshold is a prototype default.** None has been approved by a
-  clinical governance body, and none should be used on a real patient.
+## 12. Testing
+
+```bash
+make test
+```
+
+263 tests. The ones worth reading are the ones that encode a clinical rule:
+
+- `test_platform.py` — **no route is accidentally public** (walks every route
+  rather than a hand-written list, which is how it caught two unguarded writes)
+- `test_queue.py` — a bay only takes a triaged patient; a patient who
+  deteriorates after sign-off is not stranded
+- `test_ratchet.py` — no machine source can lower a priority
+- `test_layer0.py` — age-banded thresholds; the refusal message
+- `test_abstention.py` — refusing to score is an escalation, not a shrug
+- `test_uncertainty.py` — the statistics behind the reported intervals
+
+## 13. Limitations, stated plainly
+
+- **The outcome label is hospital admission**, a coarser acuity proxy than
+  ICU-transfer-or-death. We checked: neither available dataset carries ICU
+  timestamps.
+- **We tried a sharper endpoint and it did not work.** A time-critical diagnosis
+  instead of admission gave **+5.1 points, 95% CI [−12.9, +28.5], n=19** — not
+  resolvable. Published as a negative result, and the strongest argument we have
+  for credentialed data access.
+- **Layer 2 rests on 159 real trajectories.** Small, and now reported that way:
+  every rate carries an interval.
+- **The fairness gap is inside tolerance, not zero** — 2.1%, CI [0.4, 4.3]. Four
+  subgroups are too small to estimate at all; they are named rather than dropped.
+- **The three failure pathways are the classical triad, assumed.** Round 1
+  material names only one explicitly.
+- **No hospital feed is connected.** FHIR is verified against a public sandbox.
+- **Nothing here has been through clinical governance.** Every threshold is a
+  prototype default, and none should be used on a real patient.
+
+---
+
+**Prototype. Not a medical device. Not for use on real patients.**

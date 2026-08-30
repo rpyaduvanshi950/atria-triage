@@ -1,8 +1,7 @@
 @import "tailwindcss";
 
 /**
- * Palette, type and shape taken from the reference build
- * (docsfromsatyansh/ATRIA_Intuitive_Flow_Deterioration_UI.html), which the PRD
+ * Palette, type and shape taken from the team's reference build, which the PRD
  * names as authoritative for visual intent.
  *
  * One deliberate departure: the reference sets body copy at 7–12px. That is
