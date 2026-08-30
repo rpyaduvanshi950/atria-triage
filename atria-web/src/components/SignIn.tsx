@@ -10,15 +10,38 @@
  * screen of a clinical product into a table of test logins. Filling the fields
  * does the same job and takes a keystroke fewer.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 
 export function SignIn() {
   const { signIn } = useAuth();
-  /* Pre-filled for the prototype. A real deployment sets ATRIA_USERS, at which
-     point these accounts do not exist and the fields start empty. */
-  const [username, setUsername] = useState("nurse.demo");
-  const [password, setPassword] = useState("nurse.demo");
+  /*
+   * Start empty and fill in only if the server says the seeded accounts are
+   * actually live.
+   *
+   * These fields used to be pre-filled with nurse.demo unconditionally. On any
+   * deployment that sets ATRIA_USERS that account does not exist, so pressing
+   * Sign in without editing produced "incorrect username or password" — an
+   * accurate message about credentials the page had put there itself. Offering
+   * a login that cannot work is worse than offering none.
+   */
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [demo, setDemo] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.mode()
+      .then((m) => {
+        if (cancelled || !m.demo_accounts) return;
+        setDemo(true);
+        setUsername("nurse.demo");
+        setPassword("nurse.demo");
+      })
+      .catch(() => { /* the fields simply stay empty */ });
+    return () => { cancelled = true; };
+  }, []);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -48,6 +71,12 @@ export function SignIn() {
           Every assessment and sign-off is recorded against the person who made
           it, so the board asks who you are first.
         </p>
+        {demo && (
+          <p className="text-[14px] text-ink3 mt-2">
+            Demo accounts are live on this deployment and the fields are filled
+            in for you.
+          </p>
+        )}
 
         <form onSubmit={submit} className="mt-5 flex flex-col gap-3">
           <label className="text-[14px] font-semibold text-ink2">
