@@ -9,13 +9,11 @@ not diagnose, does not prescribe, and cannot lower anyone's priority on its own.
 Accenture Innovation Challenge 2026 · Round 2, Track 2 (PatientTriage.ai)
 Team **Digital Ninja** — Pushpender, Shagun, Atit · IIT Kanpur
 
-| | |
-|---|---|
-| **Live board** | https://atria-triage.vercel.app |
-| **Live engine / API docs** | https://atria-triage.onrender.com/docs |
-| **Source** | https://github.com/rpyaduvanshi950/atria-triage |
-| **Plain-words explainer (PDF)** | [`docs/pdf/ATRIA-explained.pdf`](docs/pdf/ATRIA-explained.pdf) |
-| **Demo video script** | [`docs/demo-script.md`](docs/demo-script.md) |
+|                                  |                                                 |
+| -------------------------------- | ----------------------------------------------- |
+| **Live board**             | <https://atria-triage.vercel.app>                 |
+| **Live engine / API docs** | <https://atria-triage.onrender.com/docs>          |
+| **Source**                 | <https://github.com/rpyaduvanshi950/atria-triage> |
 
 > The hosted board runs on free tiers and sleeps after ~15 minutes idle. The
 > first request wakes it and takes about 50 seconds. Open the engine link first,
@@ -105,12 +103,12 @@ decision stays with a human, and the record says who made it.
 The important column is the last one: **which layers are allowed to decide
 anything.**
 
-| Layer | What it does | Authority |
-|---|---|---|
-| **0 — Safety rules** | Eleven rules with clinical citations. SpO₂ < 90. Systolic below the **age-banded** minimum. Active seizure. Stroke signs inside the thrombolysis window. | **Decides.** Forces priority 1; no model output can suppress it |
-| **1 — Acuity scorer** | The only trained model. 23 features available within five minutes of arrival | *Recommends* |
-| **2 — Trajectory** | Compares each reading against the previous ones — direction of travel, not the snapshot | *Re-orders* |
-| **3 — Human** | The nurse's workflow and a tamper-evident record | **Decides** |
+| Layer                        | What it does                                                                                                                                                   | Authority                                                             |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| **0 — Safety rules**  | Eleven rules with clinical citations. SpO₂ < 90. Systolic below the**age-banded** minimum. Active seizure. Stroke signs inside the thrombolysis window. | **Decides.** Forces priority 1; no model output can suppress it |
+| **1 — Acuity scorer** | The only trained model. 23 features available within five minutes of arrival                                                                                   | *Recommends*                                                        |
+| **2 — Trajectory**    | Compares each reading against the previous ones — direction of travel, not the snapshot                                                                       | *Re-orders*                                                         |
+| **3 — Human**         | The nurse's workflow and a tamper-evident record                                                                                                               | **Decides**                                                     |
 
 **Only Layer 1 contains a model.** Layers 0, 2 and 3 are ordinary deterministic
 code — fixed thresholds, arithmetic and a state machine. That was a choice: the
@@ -124,19 +122,19 @@ code, model version and the input snapshot.
 
 ### Technology
 
-| Part | Built with | Why |
-|---|---|---|
-| Clinical engine | Python 3.12, pandas, NumPy | Plain code with no framework around the safety logic |
-| Model | scikit-learn `HistGradientBoostingClassifier` | Handles missing values natively; each prediction is explainable by feature |
-| Safety rules | YAML with a citation per rule | A clinician can change a threshold without touching code |
-| API | FastAPI, uvicorn, WebSocket — 25 routes | Pushes on event rather than polling |
-| Board | Next.js 16, React 19, TypeScript, Tailwind 4 | The stack the PRD specifies; typed responses catch contract drift at build time |
-| Long queues | TanStack Virtual | 200+ patients at 60fps; only visible rows in the DOM |
-| Second board | Streamlit | Same engine, different shell — evidence the logic is UI-independent |
-| Audit store | SQLite | One portable file an auditor can take away; `UPDATE`/`DELETE` refused by trigger |
-| Auth | JWT (HS256), PBKDF2-SHA256 | Standard and boring; no password stored readably |
-| Interop | FHIR R4, read-only | Verified against the public HAPI sandbox |
-| Tests | pytest — 263 | Every safety rule above has a test that fails if broken |
+| Part            | Built with                                     | Why                                                                                 |
+| --------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Clinical engine | Python 3.12, pandas, NumPy                     | Plain code with no framework around the safety logic                                |
+| Model           | scikit-learn`HistGradientBoostingClassifier` | Handles missing values natively; each prediction is explainable by feature          |
+| Safety rules    | YAML with a citation per rule                  | A clinician can change a threshold without touching code                            |
+| API             | FastAPI, uvicorn, WebSocket — 25 routes       | Pushes on event rather than polling                                                 |
+| Board           | Next.js 16, React 19, TypeScript, Tailwind 4   | The stack the PRD specifies; typed responses catch contract drift at build time     |
+| Long queues     | TanStack Virtual                               | 200+ patients at 60fps; only visible rows in the DOM                                |
+| Second board    | Streamlit                                      | Same engine, different shell — evidence the logic is UI-independent                |
+| Audit store     | SQLite                                         | One portable file an auditor can take away;`UPDATE`/`DELETE` refused by trigger |
+| Auth            | JWT (HS256), PBKDF2-SHA256                     | Standard and boring; no password stored readably                                    |
+| Interop         | FHIR R4, read-only                             | Verified against the public HAPI sandbox                                            |
+| Tests           | pytest — 263                                  | Every safety rule above has a test that fails if broken                             |
 
 ---
 
@@ -151,11 +149,11 @@ rather than assumed adult.
 
 **The gate returns three answers, not two:**
 
-| | |
-|---|---|
-| **Confirmed** | A rule fired on a value someone actually recorded → priority 1 |
-| **Cannot rule out** | Fired only because a missing vital was assumed worst-case → priority 2 **plus an instruction to measure it** |
-| **Not evaluable** | The source has no such column at all → skipped |
+|                           |                                                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Confirmed**       | A rule fired on a value someone actually recorded → priority 1                                                    |
+| **Cannot rule out** | Fired only because a missing vital was assumed worst-case → priority 2**plus an instruction to measure it** |
+| **Not evaluable**   | The source has no such column at all → skipped                                                                    |
 
 The third matters more than it looks. No dataset here carries GCS; gating every
 patient on an assumed GCS of 3 would fire RF01 on all of them.
@@ -191,13 +189,13 @@ from how much the three failure pathways overlap.
 
 Arithmetic on the last few readings:
 
-| Signal | Threshold |
-|---|---|
-| SpO₂ falling | ≥ 3 points |
-| Systolic falling | ≥ 15 |
-| Heart rate rising | ≥ 20 |
-| Respiratory rate rising | ≥ 6 |
-| Shock index (HR/SBP) | ≥ 0.9 |
+| Signal                  | Threshold   |
+| ----------------------- | ----------- |
+| SpO₂ falling           | ≥ 3 points |
+| Systolic falling        | ≥ 15       |
+| Heart rate rising       | ≥ 20       |
+| Respiratory rate rising | ≥ 6        |
+| Shock index (HR/SBP)    | ≥ 0.9      |
 
 Re-assessment is due at **5 / 15 / 45 / 90 / 180 minutes** for priorities 1–5.
 Being overdue forces a re-look; it does **not** raise priority. Waiting is not
@@ -241,13 +239,13 @@ from 0.809 to 0.859. We give that up deliberately and put it on the slide.
 
 **What happens after the reveal:**
 
-| The nurse chose | What happens | Reason required |
-|---|---|---|
-| Same as ATRIA | Confirm and move on | No |
-| **More** urgent | Stands, difference logged | No — escalation is never questioned |
-| **Less** urgent | Blocked until justified | **Yes** |
-| Anything, safety rule fired | Blocked, charge nurse notified | **Yes** |
-| Anything, ATRIA abstained | Blocked until justified | **Yes** |
+| The nurse chose             | What happens                   | Reason required                      |
+| --------------------------- | ------------------------------ | ------------------------------------ |
+| Same as ATRIA               | Confirm and move on            | No                                   |
+| **More** urgent       | Stands, difference logged      | No — escalation is never questioned |
+| **Less** urgent       | Blocked until justified        | **Yes**                        |
+| Anything, safety rule fired | Blocked, charge nurse notified | **Yes**                        |
+| Anything, ATRIA abstained   | Blocked until justified        | **Yes**                        |
 
 Choosing "something else" as a reason requires free text: *"other"* on its own
 tells a reviewer nothing.
@@ -276,12 +274,12 @@ tells a reviewer nothing.
 
 ## 6. Data
 
-| Source | Size | Used for | In repo |
-|---|---|---|---|
-| **Yale ED** (Hong et al. 2018) | 560,486 encounters, 3 hospitals | Trains and validates Layer 1 | No — re-fetchable |
-| **MIMIC-IV-ED demo** | 222 stays, 159 with repeated vitals | Validates Layer 2 | No — ODbL |
-| **Isfahan ED** | 143,140 stays | Priors for the generator. **Excluded from training** (§8) | No — CC BY 4.0 |
-| **Synthetic generator** | on demand | Paediatric and surge cases; moving vitals | Yes, [`data/loaders/synthetic.py`](data/loaders/synthetic.py) |
+| Source                               | Size                                | Used for                                                        | In repo                                                       |
+| ------------------------------------ | ----------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------- |
+| **Yale ED** (Hong et al. 2018) | 560,486 encounters, 3 hospitals     | Trains and validates Layer 1                                    | No — re-fetchable                                            |
+| **MIMIC-IV-ED demo**           | 222 stays, 159 with repeated vitals | Validates Layer 2                                               | No — ODbL                                                    |
+| **Isfahan ED**                 | 143,140 stays                       | Priors for the generator.**Excluded from training** (§8) | No — CC BY 4.0                                               |
+| **Synthetic generator**        | on demand                           | Paediatric and surge cases; moving vitals                       | Yes,[`data/loaders/synthetic.py`](data/loaders/synthetic.py) |
 
 Raw data is gitignored: all three are re-fetchable, and keeping them out avoids
 any redistribution question. `make status` shows which are present. **The app
@@ -295,16 +293,16 @@ uses the synthetic generator.
 Every number is produced by a script in [`eval/`](eval/) and regenerated by
 `make report`. None is typed by hand. Full output: [`docs/results.md`](docs/results.md).
 
-| Metric | Result |
-|---|---|
-| **Layer 1 discrimination** | **AUC 0.809** on 560,486 real encounters (benchmark 0.87 uses nurse ESI + race, which we exclude) |
-| **Operating point** | 95.0% sensitivity / 34.1% specificity, tuned to the ACS ≤5% undertriage standard |
-| **Layer 2 lead time** | Flags **32.2%** of later-admitted vs **12.2%** discharged — **+20.0 points, 95% CI [+4.6, +31.2]**. Median **164 min** warning, CI [111, 258] |
-| **Fairness** | Worst subgroup gap **5.3% → 2.1%** out of sample, 95% CI [0.4, 4.3] — inside our 5-point tolerance |
-| **Conformal coverage** | ≥95% **per class**, not on average |
-| **Latency** | **p95 52 ms** under 3× surge locally; **p95 10.8 ms** on the hosted engine |
-| **Soak test** | 25 shifts, 434 patients, 565 full workflows, 0 failures |
-| **Tests** | **263 passing** |
+| Metric                           | Result                                                                                                                                                                |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Layer 1 discrimination** | **AUC 0.809** on 560,486 real encounters (benchmark 0.87 uses nurse ESI + race, which we exclude)                                                               |
+| **Operating point**        | 95.0% sensitivity / 34.1% specificity, tuned to the ACS ≤5% undertriage standard                                                                                     |
+| **Layer 2 lead time**      | Flags**32.2%** of later-admitted vs **12.2%** discharged — **+20.0 points, 95% CI [+4.6, +31.2]**. Median **164 min** warning, CI [111, 258] |
+| **Fairness**               | Worst subgroup gap**5.3% → 2.1%** out of sample, 95% CI [0.4, 4.3] — inside our 5-point tolerance                                                             |
+| **Conformal coverage**     | ≥95%**per class**, not on average                                                                                                                              |
+| **Latency**                | **p95 52 ms** under 3× surge locally; **p95 10.8 ms** on the hosted engine                                                                               |
+| **Soak test**              | 25 shifts, 434 patients, 565 full workflows, 0 failures                                                                                                               |
+| **Tests**                  | **263 passing**                                                                                                                                                 |
 
 ---
 
@@ -372,21 +370,21 @@ ATRIA: demo shift = 100 patients over 3h at 30x (~6 min real), 5 bays, seed 7
 make web                   # Next.js on http://localhost:3000
 ```
 
-Open **http://localhost:3000**. The sign-in fields are pre-filled with
+Open **<http://localhost:3000>**. The sign-in fields are pre-filled with
 `nurse.demo` / `nurse.demo` because the seeded accounts are live locally.
 
-| Account | Password | Role |
-|---|---|---|
-| `nurse.demo` | `nurse.demo` | Triage nurse |
+| Account         | Password        | Role                                    |
+| --------------- | --------------- | --------------------------------------- |
+| `nurse.demo`  | `nurse.demo`  | Triage nurse                            |
 | `charge.demo` | `charge.demo` | Charge nurse — can open and close bays |
-| `doc.demo` | `doc.demo` | Clinician — can lower a priority |
-| `audit.demo` | `audit.demo` | Clinical governance — read-only |
-| `admin.demo` | `admin.demo` | Everything, including shadow mode |
+| `doc.demo`    | `doc.demo`    | Clinician — can lower a priority       |
+| `audit.demo`  | `audit.demo`  | Clinical governance — read-only        |
+| `admin.demo`  | `admin.demo`  | Everything, including shadow mode       |
 
 ### Every command
 
 | Command | Does |
-|---|---|
+| ------------------ | ------------------------------------------------- |
 | `make setup` | venv and dependencies |
 | `make test` | the full test suite |
 | `make demo` | the engine on :8000 |
@@ -412,16 +410,16 @@ volume.
 
 ### Configuration
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `ATRIA_SECRET` | random per process | JWT signing key. **Set it in production** or every restart signs everyone out |
-| `ATRIA_USERS` | seeded demo accounts | JSON of real accounts. Password **hashes** only |
-| `ATRIA_AUTH` | `on` | `off` disables sign-in entirely (projector demos) |
-| `ATRIA_DB` | in memory | Path to the SQLite audit trail |
-| `ATRIA_ALLOWED_ORIGINS` | localhost dev ports | CORS allow-list; never a wildcard |
-| `ATRIA_SHADOW` | off | Start in shadow mode |
-| `ATRIA_FHIR_BASE` | unset | A FHIR R4 server to read vitals from |
-| `ATRIA_DEMO_*` | see [`service/app.py`](service/app.py) | Patients, speed, seed, bays, headroom |
+| Variable                  | Default                                | Purpose                                                                            |
+| ------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------- |
+| `ATRIA_SECRET`          | random per process                     | JWT signing key.**Set it in production** or every restart signs everyone out |
+| `ATRIA_USERS`           | seeded demo accounts                   | JSON of real accounts. Password**hashes** only                               |
+| `ATRIA_AUTH`            | `on`                                 | `off` disables sign-in entirely (projector demos)                                |
+| `ATRIA_DB`              | in memory                              | Path to the SQLite audit trail                                                     |
+| `ATRIA_ALLOWED_ORIGINS` | localhost dev ports                    | CORS allow-list; never a wildcard                                                  |
+| `ATRIA_SHADOW`          | off                                    | Start in shadow mode                                                               |
+| `ATRIA_FHIR_BASE`       | unset                                  | A FHIR R4 server to read vitals from                                               |
+| `ATRIA_DEMO_*`          | see[`service/app.py`](service/app.py) | Patients, speed, seed, bays, headroom                                              |
 
 Generate a password hash:
 
@@ -435,11 +433,11 @@ Generate a password hash:
 
 Three pieces, three hosts. Full walkthrough: [`docs/hosting.md`](docs/hosting.md).
 
-| Piece | Host | Notes |
-|---|---|---|
-| Engine | **Render** | Docker. [`render.yaml`](render.yaml) describes the service. Needs WebSockets and a long-running process |
-| Board | **Vercel** | Root directory `atria-web`. Set `NEXT_PUBLIC_ATRIA_API` **before the first build** — Next inlines it |
-| Streamlit board | **Streamlit Cloud** | `streamlit_app.py`, optional |
+| Piece           | Host                      | Notes                                                                                                          |
+| --------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Engine          | **Render**          | Docker.[`render.yaml`](render.yaml) describes the service. Needs WebSockets and a long-running process        |
+| Board           | **Vercel**          | Root directory`atria-web`. Set `NEXT_PUBLIC_ATRIA_API` **before the first build** — Next inlines it |
+| Streamlit board | **Streamlit Cloud** | `streamlit_app.py`, optional                                                                                 |
 
 The board **proxies the API through itself** (`next.config.ts` rewrites), so the
 browser only ever talks to its own origin and the engine's CORS allow-list stays
