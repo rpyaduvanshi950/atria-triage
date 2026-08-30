@@ -16,7 +16,7 @@ import { api, session, type User } from "@/lib/api";
 interface AuthValue {
   user: User | null;
   loading: boolean;
-  signIn: (username: string, password: string) => Promise<void>;
+  signIn: (name: string) => Promise<void>;
   signOut: () => void;
   can: (permission: string) => boolean;
 }
@@ -64,8 +64,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; };
   }, []);
 
-  const signIn = useCallback(async (username: string, password: string) => {
-    setUser(await api.signIn(username, password));
+  const signIn = useCallback(async (name: string) => {
+    setUser(await api.identify(name));
   }, []);
 
   const signOut = useCallback(() => {

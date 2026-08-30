@@ -373,6 +373,8 @@ def test_a_durable_log_is_not_swapped_for_an_empty_one(db_path):
 #: carry no patient data — they are empty documents that then have to
 #: authenticate — and the token endpoint is how you sign in at all.
 PUBLIC_PATHS = {"/", "/guide", "/v1/auth/token", "/v1/auth/me", "/v1/auth/mode",
+                # Signing in with a name and no password is the point of it.
+                "/v1/auth/identify",
                 "/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"}
 
 
@@ -430,7 +432,7 @@ def test_asking_whether_auth_is_on_is_not_itself_an_error(api):
     client, _ = api
     r = client.get("/v1/auth/mode")
     assert r.status_code == 200
-    assert set(r.json()) == {"auth_enabled", "demo_accounts"}
+    assert set(r.json()) == {"auth_enabled", "demo_accounts", "open_sign_in"}
     # and it must not leak anything about who exists
     assert "users" not in r.text and "nurse.demo" not in r.text
 
@@ -644,3 +646,76 @@ def test_the_logs_are_read_only_and_need_a_role(api):
                           headers=_login(client, who)).status_code == 200, who
     assert client.get("/v1/logs",
                       headers=_login(client, "ops.demo")).status_code == 403
+
+
+# --- signing in with a name and no password ----------------------------------
+
+def test_a_declared_identity_is_recorded_as_declared(api):
+    """
+    Signing in without a password is a deliberate trade for a prototype, but
+    the record must not launder it. The chain is only evidence if it can tell
+    "this person proved who they were" from "somebody typed this into a box".
+    """
+    import service.app as app_module
+
+    client, engine_module = api
+    r = client.post("/v1/auth/identify", data={"name": "  Priya  Sharma "})
+    assert r.status_code == 200
+    user = r.json()["user"]
+    assert user["display"] == "Priya Sharma", "whitespace should be tidied"
+    assert user["verified"] is False
+    assert user["role"] == auth.OPEN_SIGN_IN_ROLE == "nurse"
+
+    headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    stay = client.get("/v1/queue", headers=headers).json()["rows"][0]["stay_id"]
+    a = client.post(f"/v1/encounters/{stay}/nurse-assessments?esi=3",
+                    headers=headers).json()
+    client.post(f"/v1/assessments/{stay}/reveal?reveal_token={a['reveal_token']}",
+                headers=headers)
+    client.post(f"/v1/assessments/{stay}/finalize?reason_code=agree",
+                headers=headers)
+
+    entry = [r for r in engine_module.engine.audit.as_rows(50)
+             if r["kind"] == "sign_off"][-1]
+    assert entry["clinician"] == "Priya Sharma (self-declared)"
+
+
+def test_naming_yourself_cannot_get_you_a_role_you_did_not_earn(api):
+    """
+    An unauthenticated caller must not be able to declare themselves into
+    permissions. Whatever they type, they are a nurse.
+    """
+    client, _ = api
+    for claim in ("admin", "admin.demo", "doc.demo", "charge.demo"):
+        r = client.post("/v1/auth/identify", data={"name": claim})
+        assert r.json()["user"]["role"] == "nurse"
+        headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+        assert client.post("/api/override/1/4", headers=headers).status_code == 403
+        assert client.post("/v1/operations/bays/9", headers=headers).status_code == 403
+
+
+def test_an_empty_name_is_refused(api):
+    client, _ = api
+    assert client.post("/v1/auth/identify", data={"name": "   "}).status_code == 422
+
+
+def test_a_password_account_is_not_marked_self_declared(api):
+    """The marker has to mean something, so it must not appear on real logins."""
+    client, engine_module = api
+    headers = _login(client, "doc.demo")
+    me = client.get("/v1/auth/me", headers=headers).json()
+    assert me["verified"] is True
+
+    stay = client.get("/v1/queue", headers=headers).json()["rows"][0]["stay_id"]
+    client.post(f"/api/override/{stay}/4?reason_code=clinically_well", headers=headers)
+    entry = [r for r in engine_module.engine.audit.as_rows(50)
+             if r["kind"] == "override"][-1]
+    assert "self-declared" not in entry["clinician"]
+
+
+def test_open_sign_in_can_be_switched_off(api, monkeypatch):
+    """A deployment that wants passwords gets passwords."""
+    client, _ = api
+    monkeypatch.setattr(auth, "OPEN_SIGN_IN", False)
+    assert client.post("/v1/auth/identify",
+                       data={"name": "anybody"}).status_code == 403

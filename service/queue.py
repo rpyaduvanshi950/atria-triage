@@ -49,6 +49,7 @@ from layer1.model import AcuityScorer
 from layer2.ratchet import Source, apply
 from layer3.audit import AuditLog
 from layer3.workflow import BlindAssessmentError, Outcome, Stage, Workflow
+from layer2.ranking import Band, RankInput, rank_all
 from layer2.trajectory import REASSESS_MINUTES, assess
 from service import shadow as shadow_mode
 
@@ -85,6 +86,9 @@ class Patient:
     vitals: dict = field(default_factory=dict)
     #: RF11/RF12 — the system declined to rank this patient
     abstained: bool = False
+    #: RF11 specifically: too few vitals to score at all. Cleared the moment
+    #: enough readings arrive, which is what makes a manual check-in work.
+    hard_stop: bool = False
     worsening: bool = False
     #: the nurse is part-way through this one, so the queue leaves them alone
     held_for_assessment: bool = False
@@ -211,6 +215,81 @@ class QueueEngine:
         self.workflow = Workflow()
         self._next_ticket = 1
 
+    def reassess(self, patient: "Patient", vitals: dict, extra: dict | None = None
+                 ) -> int:
+        """
+        Run Layers 0 and 1 over the vitals as they stand now.
+
+        Extracted so that a new observation gets the same treatment as an
+        arrival. It used to be inline in on_arrival only, and on_vitals ran the
+        trajectory watcher alone — so a patient who arrived talking and whose
+        SpO2 then fell to 84 got a trend calculation and never a red-flag check.
+        Layer 0 re-ran on new readings only in degraded mode, which is exactly
+        backwards.
+
+        Returns the band these two layers arrive at. It never lowers anything:
+        the caller applies it through the ratchet, which only escalates.
+        """
+        extra = extra or {}
+        profile = pathways.assess({**vitals, "age": patient.age})
+
+        g = gate({**vitals, "age": patient.age,
+                  "_pathway_ambiguity": profile.spread,
+                  "_pathway_severity": profile.severity}, AVAILABLE_FIELDS)
+
+        band = 5
+        patient.red_flag = None
+        patient.needs_measurement = None
+        if g.is_red:
+            band = apply(band, g.priority, Source.RULE)
+            patient.red_flag = g.explain()
+            patient.state = "ESCALATED"
+        elif g.needs_measurement:
+            band = apply(band, g.priority, Source.RULE)
+            patient.needs_measurement = g.explain()
+
+        if g.hard_stop:
+            # Not enough to go on. Say so rather than scoring a guess.
+            patient.abstained = True
+            patient.abstain_reason = g.explain()
+            patient.state = "AWAITING"
+            patient.confidence = "LOW"
+            patient.reasons = ("no score produced — clinician assessment required",)
+            patient.hard_stop = True
+            return apply(band, g.priority, Source.RULE)
+
+        # Enough data has arrived since last time: the patient is scoreable now.
+        patient.hard_stop = False
+        patient.abstained = bool(g.ambiguous)
+        patient.abstain_reason = g.explain() if g.ambiguous else ""
+
+        if self.scorer is not None and not self.degraded:
+            row = {**vitals, "age": patient.age,
+                   "pain": _num(extra.get("pain")),
+                   "shock_index": _si(vitals), "pulse_pressure": _pp(vitals),
+                   "is_paediatric": 1.0 if (patient.age or 99) < 15 else 0.0,
+                   "is_geriatric": 1.0 if (patient.age or 0) > 60 else 0.0,
+                   "arrived_by_ambulance": int(
+                       "ambul" in str(extra.get("arrival_transport", "")).lower())}
+            for c in ("heartrate", "resprate", "o2sat", "sbp", "dbp", "temperature"):
+                row[f"{c}_missing"] = int(row.get(c) is None or pd.isna(row.get(c)))
+            row["n_vitals_missing"] = sum(
+                row[f"{c}_missing"] for c in
+                ("heartrate", "resprate", "o2sat", "sbp", "dbp", "temperature"))
+            scored = self.scorer.score_one(row)
+            band = apply(band, scored.band, Source.MODEL)
+            patient.risk = scored.risk
+            patient.confidence = scored.triage_confidence
+            patient.diagnostic_confidence = scored.diagnostic_confidence
+            patient.reasons, patient.missing = scored.reasons, scored.missing
+            patient.pathway = scored.pathways.dominant if scored.pathways else None
+            patient.conflicts = scored.conflicts
+        elif self.degraded:
+            patient.confidence = "LOW"
+            patient.reasons = ("degraded mode — Layer 0 only",)
+
+        return band
+
     # --- ingest ------------------------------------------------------------
 
     def on_arrival(self, e) -> None:
@@ -229,67 +308,34 @@ class QueueEngine:
         vitals["shock_index"] = _si(vitals)
         vitals["pulse_pressure"] = _pp(vitals)
 
-        # the three gates, computed before Layer 0 so RF12 can use the spread
-        profile = pathways.assess({**vitals, "age": patient.age})
+        # The arrival readings ARE the first point on the trajectory. Leaving
+        # them out meant Layer 2 needed two observations after arrival before it
+        # could see a trend at all, so the first new reading — often the one that
+        # shows the deterioration — had nothing to be compared against.
+        if any(v is not None for v in vitals.values()):
+            # stay_id and charttime are what layer2.assess keys on; a row without
+            # them raises rather than being ignored.
+            patient.history.append({"stay_id": e.stay_id, "charttime": self.now,
+                                    **{k: v for k, v in vitals.items()
+                                       if v is not None}})
 
-        # Layer 0 first, always. No model can suppress what it fires.
-        g = gate({**vitals, "age": patient.age,
-                  "_pathway_ambiguity": profile.spread,
-                  "_pathway_severity": profile.severity}, AVAILABLE_FIELDS)
-        band = 5
-        if g.is_red:
-            band = apply(band, g.priority, Source.RULE)
-            patient.red_flag = g.explain()
-            patient.state = "ESCALATED"
-        elif g.needs_measurement:
-            # not an emergency, but not dismissable either: measure the vital
-            band = apply(band, g.priority, Source.RULE)
-            patient.needs_measurement = g.explain()
+        # One pipeline for arrivals and for new readings alike. This used to be
+        # written out here and nowhere else, which is how on_vitals ended up
+        # running the trajectory watcher alone.
+        band = self.reassess(patient, vitals, extra=p)
 
         # RF11 — too little to go on. No score is produced at all: the patient is
         # handed to a clinician rather than given a number nobody should trust.
-        if g.hard_stop:
-            patient.band = apply(band, g.priority, Source.RULE)
-            patient.abstained = True
-            patient.abstain_reason = g.explain()
-            patient.state = "AWAITING"
-            patient.confidence = "LOW"
-            patient.reasons = ("no score produced — clinician assessment required",)
+        if patient.hard_stop:
+            patient.band = band
             self._next_ticket += 1
             self.patients[e.stay_id] = patient
             self._tick("arrived", patient, "insufficient data — routed to clinician")
             self.audit.append("abstain", patient.stay_id, self.now, rule="RF11",
-                              observed_fields=g.observed_fields, reason=g.explain())
+                              reason=patient.abstain_reason)
             self._advance_service()
             self.latencies.append((time.perf_counter() - t0) * 1000)
             return
-
-        if g.ambiguous:
-            patient.abstained = True
-            patient.abstain_reason = g.explain()
-
-        # Layer 1 recommends
-        if self.scorer is not None and not self.degraded:
-            row = {**vitals, "pain": _num(p.get("pain")), "age": patient.age,
-                   "shock_index": _si(vitals), "pulse_pressure": _pp(vitals),
-                   "is_paediatric": 1.0 if (patient.age or 99) < 15 else 0.0,
-                   "is_geriatric": 1.0 if (patient.age or 0) > 60 else 0.0,
-                   "arrived_by_ambulance": int("ambul" in str(p.get("arrival_transport", "")).lower())}
-            for c in ("heartrate", "resprate", "o2sat", "sbp", "dbp", "temperature"):
-                row[f"{c}_missing"] = int(row.get(c) is None or pd.isna(row.get(c)))
-            row["n_vitals_missing"] = sum(row[f"{c}_missing"] for c in
-                                          ("heartrate", "resprate", "o2sat", "sbp", "dbp", "temperature"))
-            s = self.scorer.score_one(row)
-            band = apply(band, s.band, Source.MODEL)
-            patient.risk = s.risk
-            patient.confidence = s.triage_confidence
-            patient.diagnostic_confidence = s.diagnostic_confidence
-            patient.reasons, patient.missing = s.reasons, s.missing
-            patient.pathway = s.pathways.dominant if s.pathways else None
-            patient.conflicts = s.conflicts
-        elif self.degraded:
-            patient.confidence = "LOW"
-            patient.reasons = ("degraded mode — Layer 0 only",)
 
         patient.vitals = {k: v for k, v in vitals.items() if k in
                           ("heartrate", "sbp", "o2sat", "resprate", "temperature")}
@@ -328,7 +374,12 @@ class QueueEngine:
         patient = self.patients.get(e.stay_id)
         if patient is None:
             return None
-        patient.history.append(e.payload)
+        # Normalised on the way in. layer2.assess keys on stay_id and
+        # charttime and raises without them, so a caller that omits either
+        # would take the engine down rather than be quietly ignored.
+        patient.history.append({**e.payload,
+                                "stay_id": e.payload.get("stay_id", e.stay_id),
+                                "charttime": e.payload.get("charttime", self.now)})
         for k in ("heartrate", "sbp", "o2sat", "resprate", "temperature"):
             latest = _num(e.payload.get(k))
             if latest is not None:
@@ -343,6 +394,44 @@ class QueueEngine:
                 patient.state, patient.red_flag = "ESCALATED", g.explain()
             self.latencies.append((time.perf_counter() - t0) * 1000)
             return None
+
+        # Layers 0 and 1, again, on the readings as they now stand. A new
+        # observation can make a patient critical, and it can also supply the
+        # third vital that lifts them out of an RF11 abstention — neither of
+        # which the trajectory watcher alone would ever notice.
+        fresh = self.reassess(patient, {**patient.vitals,
+                                        "shock_index": _si(patient.vitals),
+                                        "pulse_pressure": _pp(patient.vitals)})
+        if self.shadow and patient.red_flag:
+            # The one thing shadow mode still acts on. A red flag is eleven
+            # cited thresholds, not a model output, and withholding one because
+            # an experiment is running would mean not acting on a measured SpO2
+            # of 84. It applies whether the flag appeared at arrival or on a
+            # reading taken since.
+            forced = apply(patient.band, 1, Source.RULE)
+            if forced < patient.band:
+                patient.band_before, patient.band = patient.band, forced
+                patient.state = "ESCALATED"
+        if self.shadow and fresh < patient.band:
+            self.audit.append(
+                "shadow_recommendation", patient.stay_id, self.now,
+                acted_band=patient.band, shadow_band=fresh,
+                reasons=list(patient.reasons), model_version=self.model_version,
+                source="rescore_on_observation")
+        if not patient.hard_stop and not self.shadow:
+            # Shadow mode means nothing acts, and that has to include the
+            # rescore. Recording what the layers would have said is the point;
+            # moving the patient is precisely what it promises not to do.
+            new_band = apply(patient.band, fresh, Source.MODEL)
+            if new_band < patient.band:
+                patient.band_before, patient.band = patient.band, new_band
+                patient.state = "ESCALATED"
+                self._tick("escalated", patient,
+                           f"{patient.band_before} to {new_band} — new readings")
+                self.audit.append(
+                    "escalation", patient.stay_id, self.now,
+                    frm=patient.band_before, to=new_band,
+                    reasons=list(patient.reasons), source="rescore_on_observation")
 
         hist = pd.DataFrame(patient.history)
         t = assess(hist, now=self.now, current_band=patient.band, arrived=patient.arrived)
@@ -483,8 +572,37 @@ class QueueEngine:
 
         rows = ([row_of(p) for p in self.patients.values()]
                 + [row_of(p) for p in self.in_treatment.values()])
+
+        # Layer 2's ranking, actually running.
+        #
+        # rank_all() was written, documented and tested, and then the board
+        # sorted by a tuple written out here instead — so the "safety bands are
+        # strict" guarantee was proven about a function nothing called. It
+        # decides the order now, and the modifiers it applies (worsening
+        # reported, recheck overdue, information gaps) reach the board.
+        #
+        # Band is the primary key inside rank_all and the within-band score is
+        # capped, so no amount of waiting can lift a patient past a boundary.
+        # That is the property the test asserts, and it is now load-bearing.
+        waiting = [r for r in rows if r["state"] != "IN TREATMENT"]
+        order = {rk.stay_id: rk for rk in rank_all([
+            RankInput(
+                stay_id=r["stay_id"],
+                band=Band(min(max(r["band"], 0), 5)),
+                waited_minutes=r["waited"],
+                arrival_sequence=int(str(r["ticket"]).split("-")[-1] or 0),
+                worsening_reported=bool(r.get("worsening")),
+                recheck_due=bool(r.get("overdue_by", 0) > 0),
+                information_gap=bool(r.get("abstained") or r.get("missing")),
+            ) for r in waiting])}
+
+        for r in rows:
+            rk = order.get(r["stay_id"])
+            r["rank"] = rk.rank if rk else 10_000
+            r["rank_modifiers"] = list(rk.reasons) if rk else []
+
         rows.sort(key=lambda r: (r["state"] == "IN TREATMENT",
-                                 r["state"] != "AWAITING", r["band"], -r["waited"]))
+                                 r["state"] != "AWAITING", r["rank"]))
         lanes = {name: sum(1 for r in rows
                            if r["lane"] == name and r["state"] != "IN TREATMENT")
                  for name in LANES}

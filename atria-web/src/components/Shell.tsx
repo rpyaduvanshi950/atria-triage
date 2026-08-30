@@ -17,7 +17,6 @@ const TABS = [
   ["/", "Patients", "queue:read"],
   ["/operations", "Department", "ops:read"],
   ["/logs", "Logs", "history:read"],
-  ["/history", "Decision history", "history:read"],
 ] as const;
 
 const ROLE_LABEL: Record<string, string> = {
@@ -51,6 +50,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </nav>
           <StatusBar />
           <div className="ml-auto flex items-center gap-3">
+            {/* The name they signed in with, beside the way out. */}
             <span className="text-[14px] text-right leading-tight">
               <span className="block font-semibold">{user?.display}</span>
               <span className="block text-ink3">

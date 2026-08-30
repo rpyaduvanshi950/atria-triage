@@ -87,9 +87,29 @@ def test_no_score_is_emitted_without_a_confidence(played):
         assert row["confidence"] in {"HIGH", "MODERATE", "LOW"}
 
 
-def test_missing_vitals_are_surfaced_not_hidden(played):
-    rows = played.snapshot()["rows"]
-    assert any(r["missing"] or r["needs_measurement"] for r in rows)
+def test_missing_vitals_are_surfaced_not_hidden(scorer):
+    """
+    Checked on a patient who is genuinely missing a reading, rather than over a
+    replayed shift.
+
+    Every observation now re-runs Layers 0 and 1 over the readings as they
+    stand, so missingness is resolved as vitals arrive — which is the point of
+    that change. Asserting over a finished replay therefore tested whether
+    anyone was still un-measured at the end, which is a fact about the
+    generator, not about whether the board surfaces a gap.
+    """
+    from service.clock import Event
+    import pandas as pd
+
+    q = QueueEngine(scorer, slots=0)
+    q.on_arrival(Event(at=pd.Timestamp("2026-01-01 09:00"), kind="arrival",
+                       stay_id=1, payload={"age": 44, "chiefcomplaint": "cough",
+                                           "o2sat": 97, "heartrate": 82,
+                                           "resprate": 16}))
+    row = q.snapshot()["rows"][0]
+    assert row["missing"] or row["needs_measurement"], \
+        "a patient with no blood pressure must say so"
+    assert "sbp" in " ".join(row["missing"]) or row["needs_measurement"]
 
 
 def test_awaiting_sorts_above_everything(played):

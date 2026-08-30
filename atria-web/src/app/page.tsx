@@ -146,23 +146,22 @@ export default function AssessmentPage() {
               hint="Finished treatment and left the department." />
         <Stat label="Waiting for a bay" value={awaitingBay.length}
               hint="Triage is finished and nobody has taken them through yet. Shown with a red border." />
-        <Stat label="Moved up" value={snapshot.escalated}
-              hint="Patients ATRIA moved to a higher priority. It can never move anyone down." />
         <Bays snapshot={snapshot} onChanged={refresh} />
 
-        {/* Hover deepens the tint and the border. It used to invert to a solid
-            brand fill with white text, which made the label the least readable
-            thing on the row at the moment the pointer was on it. */}
-        <button onClick={() => setAdding(true)}
-                className="card border border-brand bg-brandsoft px-4 py-3 text-left
-                           hover:bg-brandsoft hover:border-brandink
-                           hover:shadow-[0_2px_10px_-4px_rgba(8,97,88,.45)]
-                           transition-all">
+        <button onClick={() => setAdding(true)} className={ACTIONABLE}>
           <div className="text-[14px] text-brand">New arrival</div>
-          <div className="text-[19px] font-bold mt-0.5 leading-tight text-brand">
+          <div className="text-[19px] font-bold mt-0.5 leading-tight text-brand
+                          flex items-center gap-2">
+            <span aria-hidden
+                  className="w-6 h-6 rounded-lg bg-brand text-white grid
+                             place-content-center text-[18px] leading-none pb-0.5">
+              +
+            </span>
             Add a patient
           </div>
         </button>
+
+        <Suggestions snapshot={snapshot} onChanged={refresh} />
       </div>
 
       {snapshot.degraded && (
@@ -205,6 +204,19 @@ export default function AssessmentPage() {
         </section>
 
         <section aria-label="Patient lists">
+          {/*
+            * "Moved up" sits with the queue rather than in the row of tiles.
+            * On its own up there it was a number without a subject — next to
+            * the list it is counting, it reads as what it is.
+            */}
+          <div className="flex items-baseline gap-2 mb-2">
+            <h2 className="text-[15px] font-semibold">Patients</h2>
+            <span className="text-[14px] text-ink2 ml-auto">
+              <b className="text-warn text-[16px]">{snapshot.escalated}</b> moved
+              up so far
+            </span>
+          </div>
+
           <div role="tablist" aria-label="Which patients to show"
                className="flex gap-1 mb-2 p-1 rounded-xl bg-sunk border border-line">
             {([["waiting", "Attention order", waiting.length],
@@ -269,6 +281,59 @@ export default function AssessmentPage() {
  * Closing one never turns anybody out. Capacity is checked when the next
  * patient is pulled in, so people already in a bay finish.
  */
+/**
+ * One look for everything you can press.
+ *
+ * The tiles and the buttons were the same white card, so which of them did
+ * anything was guesswork. Everything actionable is tinted, bordered in brand
+ * and lifts on hover; the read-only counters stay plain. That is the whole
+ * convention, and it only works if nothing breaks it.
+ */
+const ACTIONABLE =
+  "card border border-brand bg-brandsoft px-4 py-3 text-left cursor-pointer " +
+  "hover:border-brandink hover:shadow-[0_2px_10px_-4px_rgba(8,97,88,.45)] " +
+  "transition-all";
+
+/**
+ * The model, on or off.
+ *
+ * This was a button in the header that required admin:write. Nobody signing in
+ * by name has that, so it was visible to everyone and worked for no one — the
+ * click 403'd and nothing on screen said why. It is a labelled control now,
+ * gated on the permission that actually governs it, and hidden from roles that
+ * do not have it rather than failing silently.
+ */
+function Suggestions({ snapshot, onChanged }: {
+  snapshot: Snapshot; onChanged: () => void;
+}) {
+  const { can } = useAuth();
+  const [busy, setBusy] = useState(false);
+  if (!can("demo:write")) return null;
+
+  const off = snapshot.degraded;
+  const toggle = async () => {
+    if (busy) return;
+    setBusy(true);
+    try { await api.degraded(!off); onChanged(); }
+    catch { /* the next snapshot shows the truth either way */ }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <button onClick={toggle} disabled={busy}
+            aria-pressed={!off}
+            className={clsx(ACTIONABLE, off && "border-danger bg-dangersoft")}>
+      <div className={clsx("text-[14px]", off ? "text-danger" : "text-brand")}>
+        ATRIA suggestions
+      </div>
+      <div className={clsx("text-[19px] font-bold mt-0.5 leading-tight",
+                           off ? "text-danger" : "text-brand")}>
+        {off ? "Off — tap to restore" : "On — tap to switch off"}
+      </div>
+    </button>
+  );
+}
+
 function Bays({ snapshot, onChanged }: { snapshot: Snapshot; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   // Opening a bay is the charge nurse's call. A triage nurse sees the number
@@ -285,8 +350,11 @@ function Bays({ snapshot, onChanged }: { snapshot: Snapshot; onChanged: () => vo
   };
 
   return (
-    <div className="card border border-line px-4 py-3">
-      <div className="text-[14px] text-ink2">Treatment bays</div>
+    <div className={clsx("card px-4 py-3 border",
+                         mayChange ? "border-brand bg-brandsoft" : "border-line")}>
+      <div className={clsx("text-[14px]", mayChange ? "text-brand" : "text-ink2")}>
+        Treatment bays
+      </div>
       <div className="flex items-center gap-2 mt-0.5">
         {mayChange && (
           <button aria-label="Close a bay" disabled={busy || snapshot.slots <= 0}

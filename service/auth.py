@@ -49,22 +49,28 @@ PERMISSIONS: dict[str, set[str]] = {
     # a different thing, and not a useful one. It also had a practical cost:
     # the Logs tab is gated on history:read, so leaving it out hid the feature
     # from the only account most people sign in as.
+    # demo:write is the switch that kills the model to show Layer 0 still
+    # gating. It is a demonstration control rather than a clinical one, and it
+    # was gated on admin:write — which nobody signing in by name has, so the
+    # button was visible to everyone and worked for no one.
     "nurse":        {"queue:read", "assess:write", "worsening:write",
-                     "intake:write", "history:read"},
+                     "intake:write", "history:read", "demo:write"},
     # Opening and closing bays is the charge nurse's job in a real department,
     # so it is theirs here. A triage nurse can see the count and cannot change
     # it — the board hides the control rather than letting them press a button
     # that answers 403.
     "charge_nurse": {"queue:read", "assess:write", "worsening:write",
                      "intake:write", "acknowledge:write", "ops:read",
-                     "ops:write", "history:read"},
+                     "ops:write", "history:read", "demo:write"},
     "clinician":    {"queue:read", "assess:write", "worsening:write",
-                     "intake:write", "override:write", "history:read"},
+                     "intake:write", "override:write", "history:read",
+                     "demo:write"},
     "ops":          {"queue:read", "ops:read", "ops:write"},
     "auditor":      {"history:read"},
     "admin":        {"queue:read", "assess:write", "worsening:write",
                      "intake:write", "acknowledge:write", "override:write",
-                     "ops:read", "ops:write", "history:read", "admin:write"},
+                     "ops:read", "ops:write", "history:read", "admin:write",
+                     "demo:write"},
 }
 
 #: Lowering a patient's urgency is a clinical act. Ops and auditors have no
@@ -73,19 +79,39 @@ CLINICAL_ROLES = ("nurse", "charge_nurse", "clinician", "admin")
 
 
 class Principal:
-    """The authenticated caller, as the rest of the service sees them."""
+    """The caller, as the rest of the service sees them."""
 
-    def __init__(self, username: str, role: str, display: str = ""):
+    def __init__(self, username: str, role: str, display: str = "",
+                 verified: bool = True):
         self.username = username
         self.role = role
         self.display = display or username
+        #: True when a password was checked. False when the person simply typed
+        #: a name. See `identify()` and `audit_name`.
+        self.verified = verified
+
+    @property
+    def audit_name(self) -> str:
+        """
+        The name to write into the record.
+
+        A real account is recorded by its username, which is the stable
+        identifier and does not change when somebody's display name is edited.
+
+        A self-declared identity has no such identifier, so it is recorded as
+        what was typed, marked as unchecked. The audit chain is only evidence if
+        it distinguishes "this person proved who they were" from "somebody typed
+        this into a box" — recording both the same way would make every entry as
+        weak as the weakest, which is the opposite of what the chain is for.
+        """
+        return self.username if self.verified else f"{self.display} (self-declared)"
 
     def can(self, permission: str) -> bool:
         return permission in PERMISSIONS.get(self.role, set())
 
     def as_dict(self) -> dict[str, Any]:
         return {"username": self.username, "role": self.role,
-                "display": self.display,
+                "display": self.display, "verified": self.verified,
                 "permissions": sorted(PERMISSIONS.get(self.role, set()))}
 
 
@@ -159,11 +185,41 @@ def authenticate(username: str, password: str) -> Principal | None:
 def issue_token(p: Principal) -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     payload = {"sub": p.username, "role": p.role, "name": p.display,
+               "vrf": p.verified,
                "iat": now, "exp": now + timedelta(minutes=TOKEN_MINUTES),
                "jti": secrets.token_urlsafe(8)}
     return {"access_token": jwt.encode(payload, SECRET, algorithm=ALGORITHM),
             "token_type": "bearer", "expires_in": TOKEN_MINUTES * 60,
             "user": p.as_dict()}
+
+
+#: Sign in with a name and no password.
+#:
+#: A triage nurse starting a shift should not be typing a password into a
+#: prototype, and a judge opening the link should not be hunting for one. What
+#: this gives up is real and is not hidden: an identity nobody checked. So the
+#: token is marked unverified, the record says "(self-declared)" beside the
+#: name, and the role is fixed at nurse — an unauthenticated caller cannot
+#: declare themselves an administrator.
+#:
+#: Set ATRIA_OPEN_SIGN_IN=off to require a password for everyone.
+OPEN_SIGN_IN = os.environ.get(
+    "ATRIA_OPEN_SIGN_IN", "on").lower() not in ("off", "0", "false")
+
+#: What an open sign-in gets you. Never admin, never override.
+OPEN_SIGN_IN_ROLE = "nurse"
+
+
+def identify(name: str) -> Principal:
+    """Take somebody at their word, and record that that is what happened."""
+    clean = " ".join(name.split())[:60]
+    if not clean:
+        raise ValueError("a name or employee ID is required")
+    # A stable username so the same person's entries group together, while the
+    # display keeps whatever they actually typed.
+    username = "".join(c if c.isalnum() else "." for c in clean.lower()).strip(".")
+    return Principal(username or "unnamed", OPEN_SIGN_IN_ROLE, clean,
+                     verified=False)
 
 
 oauth2 = OAuth2PasswordBearer(tokenUrl="/v1/auth/token", auto_error=False)
@@ -189,7 +245,8 @@ async def current_user(token: str | None = Depends(oauth2)) -> Principal:
     except jwt.PyJWTError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token",
                             headers={"WWW-Authenticate": "Bearer"})
-    return Principal(claims["sub"], claims.get("role", ""), claims.get("name", ""))
+    return Principal(claims["sub"], claims.get("role", ""), claims.get("name", ""),
+                     verified=bool(claims.get("vrf", True)))
 
 
 def requires(permission: str):

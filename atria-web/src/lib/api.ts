@@ -64,6 +64,8 @@ export interface User {
   username: string;
   role: string;
   display: string;
+  /** False when they simply typed a name. The record says so too. */
+  verified: boolean;
   permissions: string[];
   auth_enabled?: boolean;
   demo_accounts?: boolean;
@@ -116,14 +118,30 @@ export const api = {
     return data.user;
   },
 
+  /** Sign in with a name or employee ID and no password. */
+  identify: async (name: string) => {
+    const res = await fetch(`${BASE}/v1/auth/identify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ name }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, body.error ?? "could not sign in");
+    }
+    const data = (await res.json()) as { access_token: string; user: User };
+    session.set(data.access_token);
+    return data.user;
+  },
+
   signOut: () => session.set(null),
 
   /** Who we are signed in as, and what that role is allowed to do. */
   me: () => request<User>("/v1/auth/me"),
 
   /** Public: whether signing in is required at all. Never 401s. */
-  mode: () => request<{ auth_enabled: boolean; demo_accounts: boolean }>(
-    "/v1/auth/mode"),
+  mode: () => request<{ auth_enabled: boolean; demo_accounts: boolean;
+                        open_sign_in: boolean }>("/v1/auth/mode"),
 
   queue: () => request<Snapshot>("/v1/queue"),
 

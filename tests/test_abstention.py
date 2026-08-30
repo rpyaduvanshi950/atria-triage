@@ -98,9 +98,15 @@ def test_more_missing_data_means_more_abstentions():
     scorer = AcuityScorer().fit(generate(1500, seed=3))
 
     def run(missing_rate):
+        # Arrivals only. Every later observation now re-runs Layers 0 and 1, so
+        # an abstention is resolved the moment enough vitals arrive — which is
+        # the behaviour that makes a manual check-in work. Counting after a full
+        # replay measured how much data eventually turned up, not how the gate
+        # responds to having little of it.
         q = QueueEngine(scorer, slots=0)
         for e in build_events(generate(30, seed=7, hours=2.0, missing_rate=missing_rate)):
-            q.on_arrival(e) if e.kind == "arrival" else q.on_vitals(e)
+            if e.kind == "arrival":
+                q.on_arrival(e)
         return q.snapshot()["abstained"]
 
     assert run(0.50) > run(0.10)

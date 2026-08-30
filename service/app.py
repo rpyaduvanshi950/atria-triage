@@ -10,7 +10,7 @@ import json
 import os
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Form, WebSocket, WebSocketDisconnect
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -220,6 +220,25 @@ async def token(form: OAuth2PasswordRequestForm = Depends()) -> JSONResponse:
     return JSONResponse(auth.issue_token(principal))
 
 
+@app.post("/v1/auth/identify")
+async def identify(name: str = Form(...)) -> JSONResponse:
+    """
+    Sign in with a name or employee ID and no password.
+
+    The token this returns is marked unverified and carries the nurse role
+    only, so nobody can declare themselves an administrator on the way in. Every
+    entry it produces is written to the record as "(self-declared)".
+    """
+    if not auth.OPEN_SIGN_IN:
+        return JSONResponse({"error": "this deployment requires a password"},
+                            status_code=403)
+    try:
+        principal = auth.identify(name)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=422)
+    return JSONResponse(auth.issue_token(principal))
+
+
 @app.get("/v1/auth/mode")
 async def auth_mode() -> JSONResponse:
     """
@@ -232,7 +251,8 @@ async def auth_mode() -> JSONResponse:
     real error goes to hide.
     """
     return JSONResponse({"auth_enabled": auth.AUTH_ENABLED,
-                         "demo_accounts": auth.DEMO_MODE})
+                         "demo_accounts": auth.DEMO_MODE,
+                         "open_sign_in": auth.OPEN_SIGN_IN})
 
 
 @app.get("/v1/auth/me")
@@ -249,7 +269,7 @@ async def snapshot(user: Principal = Depends(requires("queue:read"))) -> JSONRes
 
 @app.post("/api/degraded/{on}")
 async def degraded(on: int,
-                   user: Principal = Depends(requires("admin:write"))) -> dict:
+                   user: Principal = Depends(requires("demo:write"))) -> dict:
     """Scenario 06: kill the model, prove Layer 0 keeps gating."""
     engine.degraded = bool(on)
     await _broadcast()
@@ -265,7 +285,7 @@ async def override(stay_id: int, band: int,
         band = engine.patients[stay_id].band
     # Identity comes from the token, never from the request body. An audit
     # entry a caller can name themselves in is not evidence.
-    entry = engine.override(stay_id, band, reason_code, clinician=user.username)
+    entry = engine.override(stay_id, band, reason_code, clinician=user.audit_name)
     await _broadcast()
     return entry
 
@@ -343,7 +363,7 @@ async def charge_nurse_ack(
         return JSONResponse({"error": "patient not found"}, status_code=404)
     engine.audit.append(
         "charge_nurse_acknowledgement", stay_id, engine.now,
-        clinician=user.username, band=p.band,
+        clinician=user.audit_name, band=p.band,
         overdue_by=round(p.overdue_by),
     )
     # Clear the escalation flag so it doesn't re-fire
@@ -351,7 +371,7 @@ async def charge_nurse_ack(
         p._charge_escalated = False
     await _broadcast()
     return JSONResponse({"status": "acknowledged", "stay_id": stay_id,
-                         "clinician": user.username})
+                         "clinician": user.audit_name})
 
 
 
@@ -405,7 +425,7 @@ async def finalize(
         stay_id: int, reason_code: str = "", reason_note: str = "",
         user: Principal = Depends(requires("assess:write"))) -> JSONResponse:
     try:
-        payload = engine.finalise(stay_id, clinician=user.username,
+        payload = engine.finalise(stay_id, clinician=user.audit_name,
                                   reason_code=reason_code, reason_note=reason_note)
     except BlindAssessmentError as exc:
         return JSONResponse({"error": str(exc)}, status_code=422)
@@ -418,7 +438,7 @@ async def worsening(
         stay_id: int,
         user: Principal = Depends(requires("worsening:write"))) -> JSONResponse:
     """Report a change. Clears sign-off and forces a fresh blind cycle."""
-    payload = engine.report_change(stay_id, reporter=user.username)
+    payload = engine.report_change(stay_id, reporter=user.audit_name)
     await _broadcast()
     return JSONResponse(payload)
 
@@ -444,7 +464,7 @@ async def set_shadow(on: int,
     """
     engine.shadow = bool(on)
     engine.audit.append("shadow_mode_changed", 0, engine.now,
-                        enabled=engine.shadow, clinician=user.username)
+                        enabled=engine.shadow, clinician=user.audit_name)
     await _broadcast()
     return {"shadow": engine.shadow}
 
@@ -462,7 +482,7 @@ async def set_bays(count: int,
     count = max(0, min(MAX_SLOTS, count))
     before, engine.slots = engine.slots, count
     engine.audit.append("bays_changed", 0, engine.now,
-                        frm=before, to=count, clinician=user.username)
+                        frm=before, to=count, clinician=user.audit_name)
     await _broadcast()
     return JSONResponse({"slots": engine.slots, "in_treatment": len(engine.in_treatment),
                          "max": MAX_SLOTS})
@@ -556,6 +576,68 @@ async def fhir_vitals(patient_id: str,
         # 503, not 500: the integration is down, ATRIA is not.
         return JSONResponse({"error": str(exc), "connected": False},
                             status_code=503)
+
+
+@app.post("/v1/integrations/fhir/{patient_id}/admit")
+async def fhir_admit(patient_id: str, stay_id: int,
+                     user: Principal = Depends(requires("intake:write"))
+                     ) -> JSONResponse:
+    """
+    Pull a patient from FHIR and put them on the board, scored.
+
+    Reading the record and acting on it were two separate steps, and only the
+    first existed: /integrations/fhir/{id} returned JSON that a human then had
+    to retype into the check-in form. This closes that: fetch, check in, submit
+    the vitals as an observation, and let the normal pipeline score them.
+
+    It goes through on_arrival and on_vitals rather than writing to the engine
+    directly, so a patient arriving from a hospital record is assessed by
+    exactly the same code as one typed in at the desk. Missing vitals stay
+    missing — the safety layers depend on knowing what was never measured.
+    """
+    import pandas as _pd
+    from service.clock import Event
+
+    try:
+        demographics = fhir_client.patient(patient_id)
+        reading = fhir_client.vitals_for(patient_id)
+    except fhir_client.FHIRUnavailable as exc:
+        return JSONResponse({"error": str(exc), "connected": False},
+                            status_code=503)
+
+    age = None
+    if born := demographics.get("birth_date"):
+        try:
+            age = (_pd.Timestamp.now() - _pd.Timestamp(born)).days / 365.25
+        except ValueError:
+            age = None
+
+    now = engine.now or _pd.Timestamp.now()
+    engine.on_arrival(Event(at=now, kind="arrival", stay_id=stay_id, payload=dict(
+        age=age, gender=demographics.get("gender"),
+        chiefcomplaint=f"from FHIR record {patient_id}",
+        arrival_transport="unknown", **reading["vitals"])))
+
+    # A second event, so the reading lands on the trajectory as an observation
+    # and the patient is re-scored exactly as any monitored patient would be.
+    if reading["vitals"]:
+        engine.on_vitals(Event(at=now, kind="vitals", stay_id=stay_id,
+                               payload={"stay_id": stay_id, "charttime": now,
+                                        **reading["vitals"]}))
+
+    engine.audit.append("fhir_import", stay_id, engine.now,
+                        fhir_patient=patient_id, clinician=user.audit_name,
+                        vitals_found=sorted(reading["vitals"]),
+                        vitals_missing=reading["missing"])
+    await _broadcast()
+
+    patient = engine.patients.get(stay_id) or engine.in_treatment.get(stay_id)
+    return JSONResponse({
+        "stay_id": stay_id, "imported_from": patient_id,
+        "vitals_found": reading["vitals"], "missing": reading["missing"],
+        "band": patient.band if patient else None,
+        "abstained": patient.abstained if patient else None,
+    })
 
 
 @app.websocket("/ws")
