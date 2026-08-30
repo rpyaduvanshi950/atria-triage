@@ -67,6 +67,37 @@ decision stays with a human, and the record says who made it.
 > decision kept under review — while leaving every actual decision with a
 > clinician, and writing down who made it.
 
+### What the prototype covers
+
+Not a happy path. Each of these is exercised by the running system and by a
+test, not described in a slide.
+
+| | |
+|---|---|
+| **100-patient simulated ED shift** | Three simulated hours, replayed in six minutes from a fixed seed |
+| **Paediatric and geriatric** | Five age-banded threshold functions; `is_paediatric` and `is_geriatric` as model features |
+| **Ambiguous / abstain** | RF12 at ≥0.75 pathway overlap; RF11 below 3 recorded vitals |
+| **Missing history and manual intake** | Check a patient in by hand with any subset of vitals; blanks stay blank |
+| **Clinician override** | The only path that lowers urgency, and the only one that demands a reason |
+| **3× surge** | Latency measured under three times the arrival rate |
+| **Confidence shown** | Two of them: how urgent, and what is wrong — reported separately |
+
+### Why this is hard to copy
+
+The moat is not the model. It is the shape of the decision around it.
+
+| Problem | What ATRIA does about it |
+|---|---|
+| **Automation bias** | The nurse goes first, blind. The recommendation is absent from the payload until they commit |
+| **Liability** | A licensed clinician owns the final decision. No machine source can lower a priority |
+| **Explainability** | Reasons appear where a decision needs justifying, not as decoration on every row |
+| **Auditability** | Disagreement becomes structured evidence: nurse ESI, ATRIA ESI, outcome, reason code, and who signed |
+| **Compounding advantage** | Because every nurse answers blind, **independent human labels accumulate** — the one dataset a competitor cannot buy |
+
+That last row is the one worth pressing on. A system that shows its
+recommendation first can never learn whether it helped, because every label it
+collects has already been contaminated by its own suggestion.
+
 ---
 
 ## 3. Architecture
@@ -134,7 +165,7 @@ code, model version and the input snapshot.
 | Audit store     | SQLite                                         | One portable file an auditor can take away;`UPDATE`/`DELETE` refused by trigger |
 | Auth            | JWT (HS256), PBKDF2-SHA256                     | Standard and boring; no password stored readably                                    |
 | Interop         | FHIR R4, read-only                             | Verified against the public HAPI sandbox                                            |
-| Tests           | pytest — 263                                  | Every safety rule above has a test that fails if broken                             |
+| Tests           | pytest — 274                                  | Every safety rule above has a test that fails if broken                             |
 
 ---
 
@@ -185,6 +216,14 @@ from how much the three failure pathways overlap.
 
 **Never scores missingness as reassuring** — see §8.
 
+**Re-scored on every new reading.** Layers 0 and 1 re-run whenever an
+observation arrives, not just at arrival, so a patient who walks in talking and
+whose SpO₂ then falls to 84 gets a red-flag check rather than a trend
+calculation. The model itself is held to one score per patient per ten seconds
+so a rating does not churn; **Layer 0 is deliberately outside that hold**, because
+a red flag has to fire on the reading that crosses the threshold rather than the
+next one after a timer.
+
 **Every score is attributed.** TreeSHAP over the fitted trees reports what the
 model actually weighed for *this* patient, which is not the same as the pathway
 description beside it: a patient can trip the respiratory pathway on a
@@ -213,6 +252,11 @@ deterioration. Only at 3× the safe wait does it escalate by one, as a backstop.
 **Bands are strict.** Operational pressure and waiting time reorder patients
 *within* a band and can never cross a boundary. A maximally boosted priority 3
 still ranks below an untouched priority 2, and a test proves it.
+
+`rank_all()` in [`layer2/ranking.py`](layer2/ranking.py) decides the board order,
+and the board sorts on nothing else — the list agrees with the ratings printed on
+it. Anything that needs attention first already carries a band that puts it
+there: a fired rule is band 1, an abstention band 2.
 
 ### Layer 3 — workflow and record · [`layer3/`](layer3/)
 
@@ -319,7 +363,7 @@ recomputed from the data.
 | **Conformal coverage**     | ≥95%**per class**, not on average                                                                                                                              |
 | **Latency**                | **p95 52 ms** under 3× surge locally; **p95 10.8 ms** on the hosted engine                                                                               |
 | **Soak test**              | 25 shifts, 434 patients, 565 full workflows, 0 failures                                                                                                               |
-| **Tests**                  | **263 passing**                                                                                                                                                 |
+| **Tests**                  | **274 passing**                                                                                                                                                 |
 
 ---
 
@@ -364,7 +408,7 @@ make setup                 # creates .venv and installs dependencies
 ### Step 2 — verify the build
 
 ```bash
-make test                  # 263 tests, about 5 minutes
+make test                  # 274 tests, about 6 minutes
 ```
 
 ### Step 3 — start the engine
@@ -475,7 +519,7 @@ ml/              frozen model artifact + manifest, and the freeze script
 data/loaders/    one loader per source, all conforming to contracts/schema.py
 eval/            every measured number, plus figures and uncertainty helpers
 scenarios/       seven deterministic demo cases
-tests/           263 tests
+tests/           274 tests
 atria-web/       the Next.js board
 dashboard/       a plain-HTML board served by the engine itself
 ```
@@ -486,7 +530,7 @@ dashboard/       a plain-HTML board served by the engine itself
 make test
 ```
 
-263 tests. The ones worth reading are the ones that encode a clinical rule:
+274 tests. The ones worth reading are the ones that encode a clinical rule:
 
 - `test_platform.py` — **no route is accidentally public** (walks every route
   rather than a hand-written list, which is how it caught two unguarded writes)
@@ -512,6 +556,9 @@ make test
   subgroups are too small to estimate at all; they are named rather than dropped.
 - **The three failure pathways are the classical triad, assumed.** Round 1
   material names only one explicitly.
+- **Patient records are held in memory.** Only the audit trail is written to
+  SQLite. A restart loses the live board and keeps the evidence, which is the
+  right way round but is not the same as durable state.
 - **No hospital feed is connected.** FHIR is verified against a public sandbox.
 - **Nothing here has been through clinical governance.** Every threshold is a
   prototype default, and none should be used on a real patient.
