@@ -17,6 +17,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
 
 from contracts.schema import Dataset
+from layer1 import explain
 from layer1 import features, interactions, pathways
 from layer1.conformal import MondrianConformal, PredictionSet
 from layer1.pathways import PathwayProfile
@@ -53,6 +54,10 @@ class Scored:
     missing: tuple[str, ...]
     #: the conformal prediction set. There is no path to a risk without one.
     prediction_set: PredictionSet | None = None
+    #: TreeSHAP attributions for THIS prediction: what the model actually
+    #: weighed, as distinct from the descriptive reasons above. Empty when the
+    #: explainer could not be built, which never blocks a score.
+    attributions: tuple = ()
     pathways: PathwayProfile | None = None
     conflicts: tuple[str, ...] = ()
     amplified_by: float = 1.0
@@ -160,6 +165,10 @@ class AcuityScorer:
         from layer1.verify import unsafe_fields
         self.unsafe_missing = unsafe_fields(self, X)
         self.metrics["unsafe_missing_fields"] = list(self.unsafe_missing)
+        # Built here rather than per patient: constructing it walks the trees.
+        # After this, explaining one prediction costs a few milliseconds, which
+        # is what makes it affordable on every score.
+        self.attributor = explain.Attributor(self.model, self.columns)
         return self
 
     # --- persistence (Build Plan §2a) ----------------------------------------
@@ -294,6 +303,11 @@ class AcuityScorer:
             pathways=profile,
             conflicts=tuple(i.describe() for i in found if i.kind == "conflict"),
             amplified_by=amplify,
+            # What the model weighed, from the model. Never used to change the
+            # score — an explanation that can alter what it explains is not one.
+            attributions=tuple(
+                getattr(self, "attributor", None).explain(X)
+                if getattr(self, "attributor", None) else ()),
         )
 
     @staticmethod

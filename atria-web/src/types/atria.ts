@@ -49,6 +49,11 @@ export interface QueueRow {
   assessment_stage: "awaiting_nurse" | "compared" | "signed";
   /** Why this patient sits where they do, in the order the sort applies. */
   rank_because: string[];
+  /** TreeSHAP: what the model actually weighed for this patient. */
+  attributions: {
+    feature: string; label: string; value: number | null;
+    direction: "raised" | "lowered"; effect: number; share: number;
+  }[];
   vitals: Vitals;
 }
 

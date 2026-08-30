@@ -94,6 +94,9 @@ class Patient:
     held_for_assessment: bool = False
     abstain_reason: str = ""
     diagnostic_confidence: str = "HIGH"
+    #: TreeSHAP attributions for this patient's Layer 1 score: what the model
+    #: weighed, which can differ from the pathway description above.
+    attributions: tuple = ()
     #: what ATRIA would have set the band to. Equal to `band` in normal running;
     #: in shadow mode it is the recommendation nobody acted on.
     shadow_band: int | None = None
@@ -163,6 +166,7 @@ class Patient:
             signed_off=self.signed_off,
             care_since=str(self.seen_at or self.signed_off_at or ""),
             rank_because=self.rank_because(now),
+            attributions=[dict(a) for a in self.attributions],
         )
 
 
@@ -284,6 +288,7 @@ class QueueEngine:
             patient.reasons, patient.missing = scored.reasons, scored.missing
             patient.pathway = scored.pathways.dominant if scored.pathways else None
             patient.conflicts = scored.conflicts
+            patient.attributions = scored.attributions
         elif self.degraded:
             patient.confidence = "LOW"
             patient.reasons = ("degraded mode — Layer 0 only",)

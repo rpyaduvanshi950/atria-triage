@@ -425,6 +425,35 @@ function AtriaSaid({ view, row }: { view: AssessmentView; row: QueueRow }) {
         </p>
       )}
 
+      {(row.attributions ?? []).length > 0 && (
+        <div className="mt-3 pt-3 border-t border-line">
+          <p className="text-[13px] font-semibold text-ink2">
+            What the model weighed
+          </p>
+          {/* Measured from the model with TreeSHAP, not restated from the
+              reasons above — the two can disagree, and when they do that is
+              worth seeing rather than smoothing over. */}
+          <ul className="mt-1.5 flex flex-col gap-1">
+            {(row.attributions ?? []).slice(0, 4).map((a) => (
+              <li key={a.feature} className="flex items-center gap-2 text-[13px]">
+                <span className="w-16 h-1.5 rounded-full bg-line overflow-hidden shrink-0">
+                  <span className={clsx("block h-full rounded-full",
+                                        a.direction === "raised" ? "bg-danger" : "bg-ok")}
+                        style={{ width: `${Math.round(a.share * 100)}%` }} />
+                </span>
+                <span className="text-ink2">
+                  {a.label}
+                  {a.value !== null && <b className="text-ink"> {a.value}</b>}{" "}
+                  <span className={a.direction === "raised" ? "text-danger" : "text-ok"}>
+                    {a.direction} it
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {row.missing.length > 0 && (
         <p className="text-[13px] text-warn mt-2">
           Judged without: {row.missing.join(", ")}

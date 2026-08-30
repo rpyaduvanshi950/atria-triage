@@ -185,6 +185,15 @@ from how much the three failure pathways overlap.
 
 **Never scores missingness as reassuring** — see §8.
 
+**Every score is attributed.** TreeSHAP over the fitted trees reports what the
+model actually weighed for *this* patient, which is not the same as the pathway
+description beside it: a patient can trip the respiratory pathway on a
+borderline breathing rate while the score is driven by blood pressure. Both are
+shown, because when they disagree that is worth seeing. The attribution is
+read-only — nothing downstream consumes it, since an explanation that can alter
+what it explains is not one. If the explainer cannot be built, patients are
+still scored and the board falls back to the descriptive reasons.
+
 ### Layer 2 — trajectory · [`layer2/`](layer2/)
 
 Arithmetic on the last few readings:

@@ -56,3 +56,72 @@ def test_the_clamp_does_not_send_well_patients_to_the_top():
 def test_unsafe_fields_are_recorded_in_metrics():
     m = AcuityScorer().fit(generate(1200, seed=3))
     assert "unsafe_missing_fields" in m.metrics
+
+
+# --- feature attribution ------------------------------------------------------
+
+def test_attributions_come_from_the_model_not_from_the_reasons():
+    """
+    The descriptive reasons name the pathway that engaged. TreeSHAP reports what
+    the trained model actually weighed, and the two can disagree — a patient can
+    trip the respiratory pathway on a borderline rate while the score is driven
+    by blood pressure. If these were the same thing there would be no point
+    computing them.
+    """
+    import warnings
+    warnings.filterwarnings("ignore")
+    from data.loaders.synthetic import generate
+    from layer1.model import AcuityScorer
+
+    scorer = AcuityScorer().fit(generate(600, seed=3))
+    scored = scorer.score_one({
+        "o2sat": 88, "sbp": 92, "heartrate": 124, "resprate": 28,
+        "temperature": 99.1, "age": 71, "shock_index": 1.35,
+        "pulse_pressure": 38, "is_paediatric": 0, "is_geriatric": 1})
+
+    assert scored.attributions, "no attribution produced"
+    for a in scored.attributions:
+        assert a["feature"] in scorer.columns, "attributed to a feature not in the model"
+        assert a["direction"] in ("raised", "lowered")
+        assert 0.0 <= a["share"] <= 1.0
+    shares = [a["share"] for a in scored.attributions]
+    assert shares == sorted(shares, reverse=True), "largest effect must come first"
+
+
+def test_an_explanation_never_changes_the_score():
+    """
+    An explanation that can alter what it explains is not an explanation. The
+    attributor is read-only with respect to the decision.
+    """
+    import warnings
+    warnings.filterwarnings("ignore")
+    from data.loaders.synthetic import generate
+    from layer1.model import AcuityScorer
+
+    scorer = AcuityScorer().fit(generate(500, seed=3))
+    row = {"o2sat": 95, "sbp": 118, "heartrate": 88, "resprate": 18,
+           "temperature": 98.4, "age": 40, "shock_index": 0.75,
+           "pulse_pressure": 44, "is_paediatric": 0, "is_geriatric": 0}
+    with_explainer = scorer.score_one(row)
+
+    scorer.attributor = None                      # as if shap were unavailable
+    without = scorer.score_one(row)
+
+    assert without.attributions == ()
+    assert without.risk == with_explainer.risk
+    assert without.band == with_explainer.band
+
+
+def test_the_model_still_scores_when_shap_is_missing():
+    """A missing optional dependency must never stop a patient being scored."""
+    import warnings
+    warnings.filterwarnings("ignore")
+    from data.loaders.synthetic import generate
+    from layer1 import explain
+    from layer1.model import AcuityScorer
+
+    scorer = AcuityScorer().fit(generate(500, seed=3))
+    broken = explain.Attributor.__new__(explain.Attributor)
+    broken.columns, broken._explainer = list(scorer.columns), None
+    assert broken.ready is False
+    assert broken.explain(None) == [] or broken.explain(__import__("pandas").DataFrame()) == []

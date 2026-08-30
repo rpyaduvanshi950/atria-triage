@@ -14,3 +14,4 @@ scipy>=1.11
 pyyaml>=6.0
 pyjwt>=2.8
 python-multipart>=0.0.9
+shap>=0.44
