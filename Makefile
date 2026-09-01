@@ -1,4 +1,4 @@
-.PHONY: help setup test test-all status demo streamlit scenarios eval fairness figures report extract-yale freeze shadow explainer readme-pdf clean
+.PHONY: help setup test test-all status demo streamlit scenarios eval fairness figures report extract-yale freeze shadow explainer readme-pdf build-log-pdf clean
 
 help:
 	@echo "ATRIA — Accenture Innovation Challenge 2026, Track 2"
@@ -20,6 +20,7 @@ help:
 	@echo "  make shadow        start the board in shadow mode (nothing acts)"
 	@echo "  make explainer     re-render the plain-words PDF from its HTML source"
 	@echo "  make readme-pdf    render README.md to docs/pdf/ATRIA-README.pdf"
+	@echo "  make build-log-pdf render the full engineering record to PDF"
 
 setup:
 	python3 -m venv .venv
@@ -48,7 +49,12 @@ freeze:
 # system, not the venv: `sudo apt install weasyprint`.
 # The README is the submission document and a judge may read it printed.
 readme-pdf:
-	.venv/bin/python docs/pdf/build_readme_pdf.py
+	.venv/bin/python docs/pdf/build_readme_pdf.py readme
+
+# The full engineering record: every decision, and every bug with how it was
+# found. Local only; docs/ is not tracked.
+build-log-pdf:
+	.venv/bin/python docs/pdf/build_readme_pdf.py build-log
 
 explainer:
 	@command -v weasyprint >/dev/null 2>&1 || { \
